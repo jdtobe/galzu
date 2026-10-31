@@ -53,6 +53,52 @@ func TestRejectInvalid(t *testing.T) {
 	}
 }
 
+func TestSessionPersistsOptionalNetworkScope(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+	w := httptest.NewRecorder()
+	body := `{"goal":"test","concurrency":1,"target_ip":"127.0.0.1","rate_interval_ms":500,"agents":[{"name":"Ada","role":"leader","model":"m"}]}`
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions", bytes.NewBufferString(body)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		Session store.Session `json:"session"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := s.GetSession(context.Background(), created.Session.ID)
+	if err != nil || got.TargetIP != "127.0.0.1" || got.RateIntervalMS != 500 {
+		t.Fatalf("%+v %v", got, err)
+	}
+}
+
+func TestSessionRejectsIncompleteNetworkScope(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+	for _, policy := range []string{`"target_ip":"example.com","rate_interval_ms":100`, `"target_ip":"127.0.0.1"`, `"rate_interval_ms":100`, `"target_ip":"0.0.0.0","rate_interval_ms":100`} {
+		w := httptest.NewRecorder()
+		body := `{"goal":"test","concurrency":1,` + policy + `,"agents":[{"name":"Ada","role":"leader","model":"m"}]}`
+		h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions", bytes.NewBufferString(body)))
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("policy %s: %d", policy, w.Code)
+		}
+	}
+}
+
 type talker struct{}
 
 func (talker) Chat(context.Context, string, []ollama.Message) (ollama.Reply, error) {

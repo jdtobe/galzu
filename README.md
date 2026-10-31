@@ -14,4 +14,6 @@ Options: `-listen` changes the HTTP bind address, `-db` the SQLite path, and `-o
 
 Direct messages, voting, idle reflection, approvals, external tools, and curated memory are later milestones. The server displays malformed model responses as agent errors rather than assuming success.
 
+An optional literal-IP target and minimum request interval can be saved when creating a session, but these settings are not active network access: agents cannot request or execute network tools yet. The internal network primitives are not a complete approval or safety boundary and must not be used for live assessment until that flow is implemented and reviewed.
+
 The name and visual design are provisional. Basic UI colors are defined as CSS custom properties to leave room for future branding and themes; there is not yet a theme switcher.

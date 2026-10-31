@@ -12,6 +12,7 @@ import (
 	"github.com/jdtobe/garth/internal/store"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -85,9 +86,11 @@ func failure(w http.ResponseWriter, e error) {
 }
 func (v *server) create(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Goal        string `json:"goal"`
-		Concurrency int    `json:"concurrency"`
-		Agents      []struct {
+		Goal           string `json:"goal"`
+		Concurrency    int    `json:"concurrency"`
+		TargetIP       string `json:"target_ip"`
+		RateIntervalMS int    `json:"rate_interval_ms"`
+		Agents         []struct {
 			Name  string `json:"name"`
 			Role  string `json:"role"`
 			Model string `json:"model"`
@@ -100,6 +103,13 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(input.Goal) == "" || len(input.Goal) > 4096 || input.Concurrency < 1 || input.Concurrency > 32 || len(input.Agents) == 0 || len(input.Agents) > 200 {
 		http.Error(w, "invalid goal, concurrency, or agent count", 400)
 		return
+	}
+	if input.TargetIP != "" || input.RateIntervalMS != 0 {
+		ip := net.ParseIP(input.TargetIP)
+		if ip == nil || ip.IsUnspecified() || ip.IsMulticast() || input.RateIntervalMS < 1 || input.RateIntervalMS > 3600000 {
+			http.Error(w, "target_ip must be a unicast IP and rate_interval_ms must be between 1 and 3600000", 400)
+			return
+		}
 	}
 	leaders := 0
 	for _, a := range input.Agents {
@@ -123,7 +133,7 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 		failure(w, e)
 		return
 	}
-	s := store.Session{ID: sid, Goal: input.Goal, Concurrency: input.Concurrency, Status: "running"}
+	s := store.Session{ID: sid, Goal: input.Goal, Concurrency: input.Concurrency, Status: "running", TargetIP: input.TargetIP, RateIntervalMS: input.RateIntervalMS}
 	agents := make([]store.Agent, 0, len(input.Agents))
 	for _, a := range input.Agents {
 		aid, e := id()

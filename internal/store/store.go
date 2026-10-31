@@ -11,10 +11,12 @@ import (
 )
 
 type Session struct {
-	ID          string `json:"id"`
-	Goal        string `json:"goal"`
-	Status      string `json:"status"`
-	Concurrency int    `json:"concurrency"`
+	ID             string `json:"id"`
+	Goal           string `json:"goal"`
+	Status         string `json:"status"`
+	Concurrency    int    `json:"concurrency"`
+	TargetIP       string `json:"target_ip,omitempty"`
+	RateIntervalMS int    `json:"rate_interval_ms,omitempty"`
 }
 type Agent struct {
 	ID        string `json:"id"`
@@ -52,6 +54,9 @@ func Open(path string) (*Store, error) {
  CREATE TABLE IF NOT EXISTS agents(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id), name TEXT NOT NULL, role TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '');
  CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL REFERENCES sessions(id), agent_id TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL REFERENCES sessions(id), kind TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL);`)
+	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS network_policies(session_id TEXT PRIMARY KEY REFERENCES sessions(id), target_ip TEXT NOT NULL, rate_interval_ms INTEGER NOT NULL)`)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -76,6 +81,11 @@ func (s *Store) CreateSession(ctx context.Context, v Session, agents []Agent) er
 	if _, e = tx.ExecContext(ctx, `INSERT INTO sessions VALUES(?,?,?,?)`, v.ID, v.Goal, v.Status, v.Concurrency); e != nil {
 		return e
 	}
+	if v.TargetIP != "" {
+		if _, e = tx.ExecContext(ctx, `INSERT INTO network_policies VALUES(?,?,?)`, v.ID, v.TargetIP, v.RateIntervalMS); e != nil {
+			return e
+		}
+	}
 	for _, a := range agents {
 		if _, e = tx.ExecContext(ctx, `INSERT INTO agents VALUES(?,?,?,?,?,?,?)`, a.ID, a.SessionID, a.Name, a.Role, a.Model, a.Status, a.Error); e != nil {
 			return e
@@ -88,7 +98,7 @@ func (s *Store) CreateSession(ctx context.Context, v Session, agents []Agent) er
 }
 func (s *Store) GetSession(ctx context.Context, id string) (Session, []Agent, error) {
 	var v Session
-	e := s.db.QueryRowContext(ctx, `SELECT id,goal,status,concurrency FROM sessions WHERE id=?`, id).Scan(&v.ID, &v.Goal, &v.Status, &v.Concurrency)
+	e := s.db.QueryRowContext(ctx, `SELECT s.id,s.goal,s.status,s.concurrency,COALESCE(p.target_ip,''),COALESCE(p.rate_interval_ms,0) FROM sessions s LEFT JOIN network_policies p ON p.session_id=s.id WHERE s.id=?`, id).Scan(&v.ID, &v.Goal, &v.Status, &v.Concurrency, &v.TargetIP, &v.RateIntervalMS)
 	if e != nil {
 		return v, nil, e
 	}
