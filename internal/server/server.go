@@ -223,7 +223,12 @@ func (v *server) snapshot(w http.ResponseWriter, r *http.Request) {
 			recoveries[agent.ID] = recovery
 		}
 	}
-	respond(w, 200, map[string]any{"session": s, "agents": a, "messages": m, "activity": v.r.Activity(s.ID), "failures": failures, "recoveries": recoveries})
+	progress, e := v.s.DeliveryProgress(r.Context(), s.ID)
+	if e != nil {
+		failure(w, e)
+		return
+	}
+	respond(w, 200, map[string]any{"session": s, "agents": a, "messages": m, "activity": v.r.Activity(s.ID), "failures": failures, "recoveries": recoveries, "delivery": progress})
 }
 func (v *server) message(w http.ResponseWriter, r *http.Request) {
 	sid := r.PathValue("id")

@@ -123,6 +123,23 @@ async function refresh() {
     body.className = 'message-body';
     body.textContent = message.body;
     item.append(body);
+    if (!message.agent_id) {
+      const targets = currentAgents.filter(agent => !message.recipient_id || agent.id === message.recipient_id);
+      const groups = {processed: [], pending: [], 'needs attention': [], unknown: []};
+      for (const agent of targets) {
+        const progress = (data.delivery || {})[agent.id];
+        let state;
+        if (!progress || message.id <= progress.baseline) state = 'unknown';
+        else if (progress.checkpoint != null && progress.checkpoint >= message.id) state = 'processed';
+        else if (agent.status === 'error') state = 'needs attention';
+        else state = 'pending';
+        groups[state].push(agent.name);
+      }
+      const delivery = document.createElement('small');
+      delivery.textContent = Object.entries(groups).filter(([, names]) => names.length).map(([state, names]) => `${state}: ${names.join(', ')}`).join(' · ');
+      delivery.title = 'Processed means included in a completed turn, not necessarily understood or answered.';
+      item.append(delivery);
+    }
     container.append(item);
   }
   if (follow) container.scrollTop = container.scrollHeight;

@@ -76,6 +76,9 @@ func Open(path string) (*Store, error) {
 	if err == nil {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS storage_probe(id INTEGER PRIMARY KEY, checked_at TEXT NOT NULL)`)
 	}
+	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS delivery_baselines(agent_id TEXT PRIMARY KEY REFERENCES agents(id), message_id INTEGER NOT NULL); INSERT INTO delivery_baselines(agent_id,message_id) SELECT a.id,COALESCE((SELECT MAX(id) FROM messages WHERE session_id=a.session_id),0) FROM agents a WHERE NOT EXISTS (SELECT 1 FROM delivery_baselines b WHERE b.agent_id=a.id)`)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -203,6 +206,9 @@ func (s *Store) CreateSession(ctx context.Context, v Session, agents []Agent) er
 		if _, e = tx.ExecContext(ctx, `INSERT INTO agent_checkpoints(agent_id,message_id) VALUES(?,0)`, a.ID); e != nil {
 			return e
 		}
+		if _, e = tx.ExecContext(ctx, `INSERT INTO delivery_baselines(agent_id,message_id) VALUES(?,0)`, a.ID); e != nil {
+			return e
+		}
 	}
 	if e = event(ctx, tx, v.ID, "session_created", v); e != nil {
 		return e
@@ -210,10 +216,37 @@ func (s *Store) CreateSession(ctx context.Context, v Session, agents []Agent) er
 	return tx.Commit()
 }
 
-// Checkpoint initializes agents from older databases at the current end of
-// history, avoiding unexpected replay when upgrading an existing session.
+type DeliveryProgress struct {
+	Checkpoint *int64 `json:"checkpoint"`
+	Baseline   int64  `json:"baseline"`
+}
+
+func (s *Store) DeliveryProgress(ctx context.Context, sessionID string) (map[string]DeliveryProgress, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT a.id,c.message_id,b.message_id FROM agents a LEFT JOIN agent_checkpoints c ON c.agent_id=a.id JOIN delivery_baselines b ON b.agent_id=a.id WHERE a.session_id=?`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]DeliveryProgress{}
+	for rows.Next() {
+		var id string
+		var cp sql.NullInt64
+		var p DeliveryProgress
+		if err = rows.Scan(&id, &cp, &p.Baseline); err != nil {
+			return nil, err
+		}
+		if cp.Valid {
+			p.Checkpoint = &cp.Int64
+		}
+		out[id] = p
+	}
+	return out, rows.Err()
+}
+
+// Checkpoint initializes older agents at the upgrade boundary. Messages added
+// after migration remain pending even if the agent has not started yet.
 func (s *Store) Checkpoint(ctx context.Context, sessionID, agentID string) (int64, error) {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO agent_checkpoints(agent_id,message_id) SELECT id, COALESCE((SELECT MAX(id) FROM messages WHERE session_id=?),0) FROM agents WHERE id=? AND session_id=? ON CONFLICT(agent_id) DO NOTHING`, sessionID, agentID, sessionID)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO agent_checkpoints(agent_id,message_id) SELECT id, COALESCE((SELECT message_id FROM delivery_baselines WHERE agent_id=agents.id),0) FROM agents WHERE id=? AND session_id=? ON CONFLICT(agent_id) DO NOTHING`, agentID, sessionID)
 	if err != nil {
 		return 0, err
 	}

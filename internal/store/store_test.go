@@ -6,6 +6,59 @@ import (
 	"testing"
 )
 
+func TestDeliveryBaselineForOlderSessions(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.CreateSession(ctx, Session{ID: "s", Goal: "test", Status: "paused", Concurrency: 1}, []Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.AppendMessage(ctx, "s", "", "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`DROP TABLE delivery_baselines`); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p, err := s.DeliveryProgress(ctx, "s")
+	if err != nil || p["a"].Baseline != first.ID {
+		t.Fatalf("%+v %v", p, err)
+	}
+	if _, err = s.AppendMessage(ctx, "s", "", "new"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`DELETE FROM agent_checkpoints WHERE agent_id='a'`); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := s.Checkpoint(ctx, "s", "a")
+	if err != nil || checkpoint != first.ID {
+		t.Fatalf("checkpoint %d: %v", checkpoint, err)
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	p, err = s.DeliveryProgress(ctx, "s")
+	if err != nil || p["a"].Baseline != first.ID {
+		t.Fatalf("baseline changed: %+v %v", p, err)
+	}
+}
+
 func TestAgentReplyAndCheckpointAtomic(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(filepath.Join(t.TempDir(), "db"))
