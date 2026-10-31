@@ -51,13 +51,14 @@ func (r *Runner) setActivity(session, agent string, activity Activity) {
 }
 
 type run struct {
-	ctx     context.Context
-	cancel  context.CancelFunc
-	paused  bool
-	resume  chan struct{}
-	wakes   map[string]chan struct{}
-	retries map[string]chan struct{}
-	sem     chan struct{}
+	ctx          context.Context
+	cancel       context.CancelFunc
+	paused       bool
+	resume       chan struct{}
+	wakes        map[string]chan struct{}
+	retries      map[string]chan struct{}
+	sem          chan struct{}
+	storageError string
 }
 
 func New(s *store.Store, i Inference) *Runner {
@@ -77,6 +78,9 @@ func (r *Runner) start(ctx context.Context, id string, resume bool) error {
 	}
 	if x := r.runs[id]; x != nil {
 		if resume && x.paused {
+			if x.storageError != "" {
+				return fmt.Errorf("storage recovery required")
+			}
 			if err := r.store.SetSessionStatus(ctx, id, "running"); err != nil {
 				return err
 			}
@@ -127,6 +131,53 @@ func (r *Runner) start(ctx context.Context, id string, resume bool) error {
 	}
 	r.changed(id)
 	return nil
+}
+
+func (r *Runner) StorageError(id string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if x := r.runs[id]; x != nil {
+		return x.storageError
+	}
+	return ""
+}
+func (r *Runner) storageFailureLocked(id string, x *run, err error) {
+	if x.ctx.Err() != nil {
+		return
+	}
+	x.storageError = "Storage operation failed; session stopped. Check storage and retry recovery."
+	if !x.paused {
+		x.paused = true
+		x.resume = make(chan struct{})
+	}
+	r.changed(id)
+}
+func (r *Runner) StorageFailure(id string, err error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if x := r.runs[id]; x != nil {
+		r.storageFailureLocked(id, x, err)
+	}
+}
+func (r *Runner) RecoverStorage(id string) error {
+	r.mu.Lock()
+	x := r.runs[id]
+	if x == nil || x.storageError == "" {
+		r.mu.Unlock()
+		return fmt.Errorf("no storage failure")
+	}
+	if err := r.store.ProbeWrite(context.Background()); err != nil {
+		r.mu.Unlock()
+		return fmt.Errorf("storage write check failed")
+	}
+	if err := r.store.SetSessionStatus(context.Background(), id, "paused"); err != nil {
+		r.mu.Unlock()
+		return fmt.Errorf("storage write check failed")
+	}
+	x.cancel()
+	delete(r.runs, id)
+	r.mu.Unlock()
+	return r.Start(context.Background(), id)
 }
 func (r *Runner) Resume(id string) error { return r.start(context.Background(), id, true) }
 
@@ -252,6 +303,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		recovery, err := r.store.Recovery(x.ctx, a.ID)
 		if err != nil {
+			r.StorageFailure(s.ID, err)
 			return
 		}
 		if recovery.Failures > 0 && !recovery.NextAt.IsZero() {
@@ -275,6 +327,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		base := last
 		messages, err := r.store.Messages(x.ctx, s.ID, last)
 		if err != nil {
+			r.StorageFailure(s.ID, err)
 			return
 		}
 		batchSize := 50
@@ -296,6 +349,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		if !trigger {
 			if err := r.store.SetCheckpoint(x.ctx, s.ID, a.ID, last); err != nil {
+				r.StorageFailure(s.ID, err)
 				return
 			}
 			if more {
@@ -305,6 +359,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		all, err := r.store.Messages(x.ctx, s.ID, 0)
 		if err != nil {
+			r.StorageFailure(s.ID, err)
 			return
 		}
 		// Do not include messages that arrived after this batch was selected.
@@ -318,6 +373,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		_, agents, err := r.store.GetSession(x.ctx, s.ID)
 		if err != nil {
+			r.StorageFailure(s.ID, err)
 			return
 		}
 		var roster strings.Builder
@@ -384,6 +440,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			_, currentAgents, err := r.store.GetSession(x.ctx, s.ID)
 			if err != nil {
 				<-x.sem
+				r.StorageFailure(s.ID, err)
 				return
 			}
 			thinking := false
@@ -487,6 +544,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 				next = time.Now().Add(delay + time.Duration(rand.Int63n(int64(delay/5)+1)))
 			}
 			if saveErr := r.store.RecordFailure(context.Background(), s.ID, a.ID, category, reason, excerpt, next, failures); saveErr != nil {
+				r.storageFailureLocked(s.ID, x, saveErr)
 				r.mu.Unlock()
 				return
 			}
@@ -526,6 +584,9 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		if err == nil && more {
 			r.notifyLocked(s.ID)
+		}
+		if err != nil {
+			r.storageFailureLocked(s.ID, x, err)
 		}
 		r.mu.Unlock()
 		if err != nil {

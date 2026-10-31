@@ -73,6 +73,9 @@ func Open(path string) (*Store, error) {
 	if err == nil {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_recovery(agent_id TEXT PRIMARY KEY REFERENCES agents(id), failures INTEGER NOT NULL, next_at TEXT NOT NULL, category TEXT NOT NULL, reason TEXT NOT NULL, excerpt TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agent_failures(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL REFERENCES sessions(id), agent_id TEXT NOT NULL REFERENCES agents(id), attempt INTEGER NOT NULL, category TEXT NOT NULL, reason TEXT NOT NULL, excerpt TEXT NOT NULL, created_at TEXT NOT NULL)`)
 	}
+	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS storage_probe(id INTEGER PRIMARY KEY, checked_at TEXT NOT NULL)`)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -80,6 +83,12 @@ func Open(path string) (*Store, error) {
 	return &Store{db}, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
+
+// ProbeWrite commits a real SQLite write, not merely a read or rolled-back transaction.
+func (s *Store) ProbeWrite(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO storage_probe(id,checked_at) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET checked_at=excluded.checked_at`, time.Now().UTC().Format(time.RFC3339Nano))
+	return err
+}
 
 type Recovery struct {
 	Failures int       `json:"failures"`

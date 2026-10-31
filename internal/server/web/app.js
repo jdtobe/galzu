@@ -7,13 +7,19 @@ async function api(path, options) {
   if (!response.ok) throw new Error(await response.text());
   return response.json();
 }
-function report(error) { $('error').textContent = error.message; }
+function report(error) { $('error').textContent = error.message; if (current) checkStorage().catch(() => {}); }
+async function checkStorage() {
+  const state = await api(`/api/sessions/${encodeURIComponent(current)}/storage`);
+  $('storage-warning').textContent = state.error;
+  $('storage-recover').hidden = !state.error;
+}
 function post(body) { return {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}; }
 
 async function refresh() {
   const id = current, sequence = ++refreshSequence;
   const data = await api(`/api/sessions/${encodeURIComponent(id)}`);
   if (id !== current || sequence !== refreshSequence) return;
+  await checkStorage();
   status = data.session.status;
   currentAgents = data.agents || [];
   $('goal').textContent = data.session.goal;
@@ -143,3 +149,4 @@ $('create').onsubmit = async e => { e.preventDefault(); try { const f = new Form
 $('open').onsubmit = async e => {e.preventDefault(); try {await openSession(new FormData(e.target).get('id'));} catch(err){report(err);} };
 $('send').onsubmit = async e => {e.preventDefault(); try {const f = new FormData(e.target); await api(`/api/sessions/${encodeURIComponent(current)}/messages`,post({body:f.get('body'),recipient_id:f.get('recipient_id')})); e.target.elements.body.value = ''; await refresh();} catch(err){report(err);} };
 $('pause').onclick = async () => {try {await api(`/api/sessions/${encodeURIComponent(current)}/${status==='paused'?'resume':'pause'}`,post({})); await refresh();} catch(err){report(err);} };
+$('storage-recover').onclick = async () => { try { await api(`/api/sessions/${encodeURIComponent(current)}/storage/recover`, post({})); $('error').textContent = ''; await refresh(); } catch (err) { report(err); } };

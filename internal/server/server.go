@@ -38,12 +38,24 @@ func New(s *store.Store, r *herd.Runner) http.Handler {
 	m.HandleFunc("POST /api/sessions/{id}/messages", v.message)
 	m.HandleFunc("POST /api/sessions/{id}/pause", v.pause)
 	m.HandleFunc("POST /api/sessions/{id}/resume", v.resume)
+	m.HandleFunc("GET /api/sessions/{id}/storage", v.storageStatus)
+	m.HandleFunc("POST /api/sessions/{id}/storage/recover", v.recoverStorage)
 	m.HandleFunc("POST /api/sessions/{id}/agents/{agent}/settings", v.agentSettings)
 	m.HandleFunc("POST /api/sessions/{id}/agents/{agent}/retry", v.retryAgent)
 	m.HandleFunc("GET /api/sessions/{id}/events", v.events)
 	files, _ := fs.Sub(web, "web")
 	m.Handle("/", http.FileServer(http.FS(files)))
 	return m
+}
+func (v *server) storageStatus(w http.ResponseWriter, r *http.Request) {
+	respond(w, 200, map[string]string{"error": v.r.StorageError(r.PathValue("id"))})
+}
+func (v *server) recoverStorage(w http.ResponseWriter, r *http.Request) {
+	if err := v.r.RecoverStorage(r.PathValue("id")); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	respond(w, 200, map[string]string{"status": "paused"})
 }
 func (v *server) retryAgent(w http.ResponseWriter, r *http.Request) {
 	if err := v.r.RetryAgent(r.PathValue("id"), r.PathValue("agent")); err != nil {
@@ -245,6 +257,7 @@ func (v *server) message(w http.ResponseWriter, r *http.Request) {
 	}
 	m, e := v.s.AppendSocialMessage(r.Context(), sid, "", x.RecipientID, kind, x.Body, "")
 	if e != nil {
+		v.r.StorageFailure(sid, e)
 		failure(w, e)
 		return
 	}

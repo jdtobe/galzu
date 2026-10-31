@@ -13,6 +13,54 @@ import (
 
 type capturePrompts struct{ prompts chan []ollama.Message }
 
+func TestStorageFailureRequiresExplicitRecovery(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1}, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	f := capturePrompts{make(chan []ollama.Message, 2)}
+	r := New(s, f)
+	defer r.Stop()
+	if err := r.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	r.StorageFailure("s", fmt.Errorf("disk error"))
+	if r.StorageError("s") == "" {
+		t.Fatal("no storage error")
+	}
+	if err := r.Resume("s"); err == nil {
+		t.Fatal("resumed despite storage error")
+	}
+	if _, err := s.AppendMessage(ctx, "s", "", "pending"); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	select {
+	case <-f.prompts:
+		t.Fatal("scheduled despite storage failure")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := r.RecoverStorage("s"); err != nil {
+		t.Fatal(err)
+	}
+	if r.StorageError("s") != "" {
+		t.Fatal("storage error not cleared")
+	}
+	if err := r.Resume("s"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-f.prompts:
+	case <-time.After(time.Second):
+		t.Fatal("pending message not processed after recovery")
+	}
+}
+
 type invalidThenRest struct {
 	prompts chan []ollama.Message
 	count   int
