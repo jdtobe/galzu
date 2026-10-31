@@ -38,10 +38,26 @@ func New(s *store.Store, r *herd.Runner) http.Handler {
 	m.HandleFunc("POST /api/sessions/{id}/messages", v.message)
 	m.HandleFunc("POST /api/sessions/{id}/pause", v.pause)
 	m.HandleFunc("POST /api/sessions/{id}/resume", v.resume)
+	m.HandleFunc("POST /api/sessions/{id}/agents/{agent}/settings", v.agentSettings)
 	m.HandleFunc("GET /api/sessions/{id}/events", v.events)
 	files, _ := fs.Sub(web, "web")
 	m.Handle("/", http.FileServer(http.FS(files)))
 	return m
+}
+func (v *server) agentSettings(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Thinking *bool `json:"thinking"`
+	}
+	if err := decode(w, r, &input); err != nil || input.Thinking == nil {
+		http.Error(w, "thinking must be a boolean", 400)
+		return
+	}
+	if err := v.s.SetThinking(r.Context(), r.PathValue("id"), r.PathValue("agent"), *input.Thinking); err != nil {
+		failure(w, err)
+		return
+	}
+	v.notify(r.PathValue("id"))
+	respond(w, 200, map[string]bool{"thinking": *input.Thinking})
 }
 func (v *server) notify(id string) {
 	v.mu.Lock()
@@ -169,7 +185,7 @@ func (v *server) snapshot(w http.ResponseWriter, r *http.Request) {
 		failure(w, e)
 		return
 	}
-	respond(w, 200, map[string]any{"session": s, "agents": a, "messages": m})
+	respond(w, 200, map[string]any{"session": s, "agents": a, "messages": m, "activity": v.r.Activity(s.ID)})
 }
 func (v *server) message(w http.ResponseWriter, r *http.Request) {
 	sid := r.PathValue("id")

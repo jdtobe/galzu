@@ -40,6 +40,36 @@ func TestSessionAPI(t *testing.T) {
 		t.Fatal(w.Code)
 	}
 }
+
+func TestAgentThinkingSetting(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions", bytes.NewBufferString(`{"goal":"test","concurrency":1,"agents":[{"name":"Ada","role":"leader","model":"m"}]}`)))
+	var created struct {
+		Session store.Session `json:"session"`
+		Agents  []store.Agent `json:"agents"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil || len(created.Agents) != 1 {
+		t.Fatalf("%s %v", w.Body.String(), err)
+	}
+	w = httptest.NewRecorder()
+	url := "/api/sessions/" + created.Session.ID + "/agents/" + created.Agents[0].ID + "/settings"
+	h.ServeHTTP(w, httptest.NewRequest("POST", url, bytes.NewBufferString(`{"thinking":true}`)))
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	_, agents, err := s.GetSession(context.Background(), created.Session.ID)
+	if err != nil || !agents[0].Thinking {
+		t.Fatalf("%+v %v", agents, err)
+	}
+}
 func TestRejectInvalid(t *testing.T) {
 	s, _ := store.Open(filepath.Join(t.TempDir(), "db"))
 	defer s.Close()

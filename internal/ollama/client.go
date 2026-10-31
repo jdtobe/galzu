@@ -16,8 +16,9 @@ type Message struct {
 	Content string `json:"content"`
 }
 type Reply struct {
-	Action string `json:"action"`
-	Text   string `json:"text"`
+	Action   string `json:"action"`
+	Text     string `json:"text"`
+	Thinking string `json:"thinking,omitempty"`
 }
 type Client struct {
 	base string
@@ -31,8 +32,11 @@ func New(base string, c *http.Client) *Client {
 	return &Client{strings.TrimRight(base, "/"), c}
 }
 func (c *Client) Chat(ctx context.Context, model string, messages []Message) (Reply, error) {
+	return c.ChatWithThinking(ctx, model, messages, false)
+}
+func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []Message, think bool) (Reply, error) {
 	var out Reply
-	b, e := json.Marshal(map[string]any{"model": model, "messages": messages, "stream": false, "format": "json"})
+	b, e := json.Marshal(map[string]any{"model": model, "messages": messages, "stream": false, "format": "json", "think": think})
 	if e != nil {
 		return out, e
 	}
@@ -50,13 +54,20 @@ func (c *Client) Chat(ctx context.Context, model string, messages []Message) (Re
 		return out, fmt.Errorf("ollama returned %s", res.Status)
 	}
 	var response struct {
-		Message Message `json:"message"`
+		Message struct {
+			Content  string `json:"content"`
+			Thinking string `json:"thinking"`
+		} `json:"message"`
 	}
 	if e = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&response); e != nil {
 		return out, e
 	}
 	if e = json.Unmarshal([]byte(response.Message.Content), &out); e != nil {
 		return out, fmt.Errorf("invalid social response: %w", e)
+	}
+	out.Thinking = ""
+	if think {
+		out.Thinking = response.Message.Thinking
 	}
 	if out.Action != "message" && out.Action != "rest" {
 		return out, errors.New("invalid action")

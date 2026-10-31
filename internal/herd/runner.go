@@ -6,6 +6,7 @@ import (
 	"github.com/jdtobe/garth/internal/ollama"
 	"github.com/jdtobe/garth/internal/store"
 	"sync"
+	"time"
 )
 
 type Inference interface {
@@ -17,8 +18,35 @@ type Runner struct {
 	mu       sync.Mutex
 	runs     map[string]*run
 	stopped  bool
+	activity map[string]map[string]Activity
 	OnChange func(string)
 }
+type Activity struct {
+	State       string `json:"state"`
+	QueueMS     int64  `json:"queue_ms"`
+	InferenceMS int64  `json:"inference_ms"`
+	PromptBytes int    `json:"prompt_bytes"`
+}
+
+func (r *Runner) Activity(id string) map[string]Activity {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make(map[string]Activity)
+	for agent, activity := range r.activity[id] {
+		out[agent] = activity
+	}
+	return out
+}
+func (r *Runner) setActivity(session, agent string, activity Activity) {
+	r.mu.Lock()
+	if r.activity[session] == nil {
+		r.activity[session] = make(map[string]Activity)
+	}
+	r.activity[session][agent] = activity
+	r.mu.Unlock()
+	r.changed(session)
+}
+
 type run struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -29,7 +57,7 @@ type run struct {
 }
 
 func New(s *store.Store, i Inference) *Runner {
-	return &Runner{store: s, infer: i, runs: map[string]*run{}}
+	return &Runner{store: s, infer: i, runs: map[string]*run{}, activity: map[string]map[string]Activity{}}
 }
 func (r *Runner) changed(id string) {
 	if r.OnChange != nil {
@@ -181,6 +209,12 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		for _, m := range all {
 			prompt = append(prompt, ollama.Message{Role: "user", Content: fmt.Sprintf("%s: %s", m.AgentID, m.Body)})
 		}
+		activity := Activity{State: "queued"}
+		for _, m := range prompt {
+			activity.PromptBytes += len(m.Content)
+		}
+		queued := time.Now()
+		r.setActivity(s.ID, a.ID, activity)
 		select {
 		case x.sem <- struct{}{}:
 		case <-x.ctx.Done():
@@ -193,21 +227,53 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			err   error
 		}
 		done := make(chan result, 1)
+		var started time.Time
 		for {
 			if !r.wait(x) {
 				<-x.sem
 				return
+			}
+			_, currentAgents, err := r.store.GetSession(x.ctx, s.ID)
+			if err != nil {
+				<-x.sem
+				return
+			}
+			thinking := false
+			for _, current := range currentAgents {
+				if current.ID == a.ID {
+					thinking = current.Thinking
+					break
+				}
 			}
 			r.mu.Lock()
 			if x.paused {
 				r.mu.Unlock()
 				continue
 			}
+			activity.State = "inference"
+			activity.QueueMS = time.Since(queued).Milliseconds()
+			started = time.Now()
+			if r.activity[s.ID] == nil {
+				r.activity[s.ID] = make(map[string]Activity)
+			}
+			r.activity[s.ID][a.ID] = activity
 			go func() {
-				reply, err := r.infer.Chat(x.ctx, a.Model, prompt)
+				var reply ollama.Reply
+				var err error
+				if client, ok := r.infer.(interface {
+					ChatWithThinking(context.Context, string, []ollama.Message, bool) (ollama.Reply, error)
+				}); ok {
+					reply, err = client.ChatWithThinking(x.ctx, a.Model, prompt, thinking)
+				} else {
+					reply, err = r.infer.Chat(x.ctx, a.Model, prompt)
+				}
+				if !thinking {
+					reply.Thinking = ""
+				}
 				done <- result{reply, err}
 			}()
 			r.mu.Unlock()
+			r.changed(s.ID)
 			break
 		}
 		var outcome result
@@ -219,6 +285,9 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		reply, err := outcome.reply, outcome.err
 		<-x.sem
+		activity.State = "idle"
+		activity.InferenceMS = time.Since(started).Milliseconds()
+		r.setActivity(s.ID, a.ID, activity)
 		if x.ctx.Err() != nil {
 			return
 		}
@@ -243,7 +312,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			return
 		}
 		if reply.Action == "message" {
-			_, err = r.store.AppendMessage(context.Background(), s.ID, a.ID, reply.Text)
+			_, err = r.store.AppendMessageWithThinking(context.Background(), s.ID, a.ID, reply.Text, reply.Thinking)
 			if err == nil {
 				r.notifyLocked(s.ID)
 			}
