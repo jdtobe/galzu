@@ -13,6 +13,39 @@ import (
 
 type capturePrompts struct{ prompts chan []ollama.Message }
 
+func TestPendingBacklogProcessedInOrder(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1}, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 110; i++ {
+		if _, err := s.AppendMessage(ctx, "s", "", fmt.Sprintf("item-%03d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := capturePrompts{make(chan []ollama.Message, 4)}
+	r := New(s, f)
+	defer r.Stop()
+	if err := r.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"item-050", "item-100", "item-110"} {
+		select {
+		case p := <-f.prompts:
+			if !strings.Contains(p[len(p)-1].Content, want) {
+				t.Fatalf("want %s, got %s", want, p[len(p)-1].Content)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("backlog stalled")
+		}
+	}
+}
+
 type failingOnce struct {
 	calls chan int
 	count int

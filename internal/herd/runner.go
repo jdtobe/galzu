@@ -233,6 +233,10 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		if err != nil {
 			return
 		}
+		more := len(messages) > 50
+		if more {
+			messages = messages[:50]
+		}
 		var trigger bool
 		for _, m := range messages {
 			if m.AgentID != a.ID && (m.RecipientID == "" || m.RecipientID == a.ID) {
@@ -244,12 +248,21 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			if err := r.store.SetCheckpoint(x.ctx, s.ID, a.ID, last); err != nil {
 				return
 			}
+			if more {
+				r.Notify(s.ID)
+			}
 			continue
 		}
 		all, err := r.store.Messages(x.ctx, s.ID, 0)
 		if err != nil {
 			return
 		}
+		// Do not include messages that arrived after this batch was selected.
+		end := 0
+		for end < len(all) && all[end].ID <= last {
+			end++
+		}
+		all = all[:end]
 		if len(all) > 50 {
 			all = all[len(all)-50:]
 		}
@@ -412,6 +425,9 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		if err == nil && !checkpointSaved {
 			err = r.store.SetCheckpoint(context.Background(), s.ID, a.ID, last)
+		}
+		if err == nil && more {
+			r.notifyLocked(s.ID)
 		}
 		r.mu.Unlock()
 		if err != nil {
