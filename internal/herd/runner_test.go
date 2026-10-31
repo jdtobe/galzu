@@ -13,6 +13,57 @@ import (
 
 type capturePrompts struct{ prompts chan []ollama.Message }
 
+type timeoutInference struct{ called chan struct{} }
+
+func (f timeoutInference) Chat(ctx context.Context, _ string, _ []ollama.Message) (ollama.Reply, error) {
+	f.called <- struct{}{}
+	<-ctx.Done()
+	return ollama.Reply{}, ctx.Err()
+}
+func TestInferenceTimeoutIsRetryable(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1, InferenceTimeoutMS: 20, RetryDelaysMS: []int{10000}}, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	f := timeoutInference{make(chan struct{}, 2)}
+	r := New(s, f)
+	defer r.Stop()
+	if err = r.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.AppendMessage(ctx, "s", "", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	select {
+	case <-f.called:
+	case <-time.After(time.Second):
+		t.Fatal("no inference")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		recovery, err := s.Recovery(ctx, "a")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if recovery.Failures == 1 {
+			if recovery.Category != "inference" || !strings.Contains(recovery.Reason, "deadline exceeded") {
+				t.Fatal(recovery)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timeout not recorded")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 type contextThenRest struct {
 	prompts chan []ollama.Message
 	count   int
