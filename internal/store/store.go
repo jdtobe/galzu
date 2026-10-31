@@ -11,12 +11,14 @@ import (
 )
 
 type Session struct {
-	ID             string `json:"id"`
-	Goal           string `json:"goal"`
-	Status         string `json:"status"`
-	Concurrency    int    `json:"concurrency"`
-	TargetIP       string `json:"target_ip,omitempty"`
-	RateIntervalMS int    `json:"rate_interval_ms,omitempty"`
+	ID                 string `json:"id"`
+	Goal               string `json:"goal"`
+	Status             string `json:"status"`
+	Concurrency        int    `json:"concurrency"`
+	TargetIP           string `json:"target_ip,omitempty"`
+	RateIntervalMS     int    `json:"rate_interval_ms,omitempty"`
+	InferenceTimeoutMS int    `json:"inference_timeout_ms,omitempty"`
+	RetryDelaysMS      []int  `json:"retry_delays_ms,omitempty"`
 }
 type Agent struct {
 	ID        string `json:"id"`
@@ -78,6 +80,9 @@ func Open(path string) (*Store, error) {
 	}
 	if err == nil {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS delivery_baselines(agent_id TEXT PRIMARY KEY REFERENCES agents(id), message_id INTEGER NOT NULL); INSERT INTO delivery_baselines(agent_id,message_id) SELECT a.id,COALESCE((SELECT MAX(id) FROM messages WHERE session_id=a.session_id),0) FROM agents a WHERE NOT EXISTS (SELECT 1 FROM delivery_baselines b WHERE b.agent_id=a.id)`)
+	}
+	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS inference_policies(session_id TEXT PRIMARY KEY REFERENCES sessions(id), timeout_ms INTEGER NOT NULL, retry_delays TEXT NOT NULL)`)
 	}
 	if err != nil {
 		db.Close()
@@ -194,6 +199,15 @@ func (s *Store) CreateSession(ctx context.Context, v Session, agents []Agent) er
 			return e
 		}
 	}
+	if v.InferenceTimeoutMS > 0 && v.RetryDelaysMS != nil {
+		b, err := json.Marshal(v.RetryDelaysMS)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO inference_policies VALUES(?,?,?)`, v.ID, v.InferenceTimeoutMS, string(b)); err != nil {
+			return err
+		}
+	}
 	for _, a := range agents {
 		if _, e = tx.ExecContext(ctx, `INSERT INTO agents VALUES(?,?,?,?,?,?,?)`, a.ID, a.SessionID, a.Name, a.Role, a.Model, a.Status, a.Error); e != nil {
 			return e
@@ -286,8 +300,12 @@ func (s *Store) CompleteRest(ctx context.Context, sessionID, agentID string, las
 }
 func (s *Store) GetSession(ctx context.Context, id string) (Session, []Agent, error) {
 	var v Session
-	e := s.db.QueryRowContext(ctx, `SELECT s.id,s.goal,s.status,s.concurrency,COALESCE(p.target_ip,''),COALESCE(p.rate_interval_ms,0) FROM sessions s LEFT JOIN network_policies p ON p.session_id=s.id WHERE s.id=?`, id).Scan(&v.ID, &v.Goal, &v.Status, &v.Concurrency, &v.TargetIP, &v.RateIntervalMS)
+	var delays string
+	e := s.db.QueryRowContext(ctx, `SELECT s.id,s.goal,s.status,s.concurrency,COALESCE(p.target_ip,''),COALESCE(p.rate_interval_ms,0),COALESCE(i.timeout_ms,600000),COALESCE(i.retry_delays,'[2000,10000,30000]') FROM sessions s LEFT JOIN network_policies p ON p.session_id=s.id LEFT JOIN inference_policies i ON i.session_id=s.id WHERE s.id=?`, id).Scan(&v.ID, &v.Goal, &v.Status, &v.Concurrency, &v.TargetIP, &v.RateIntervalMS, &v.InferenceTimeoutMS, &delays)
 	if e != nil {
+		return v, nil, e
+	}
+	if e = json.Unmarshal([]byte(delays), &v.RetryDelaysMS); e != nil {
 		return v, nil, e
 	}
 	rows, e := s.db.QueryContext(ctx, `SELECT a.id,a.session_id,a.name,a.role,a.model,a.status,a.error,COALESCE(p.thinking,0) FROM agents a LEFT JOIN agent_settings p ON p.agent_id=a.id WHERE a.session_id=? ORDER BY a.rowid`, id)

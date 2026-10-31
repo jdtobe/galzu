@@ -122,12 +122,14 @@ func failure(w http.ResponseWriter, e error) {
 }
 func (v *server) create(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Goal           string `json:"goal"`
-		Concurrency    int    `json:"concurrency"`
-		Thinking       bool   `json:"thinking"`
-		TargetIP       string `json:"target_ip"`
-		RateIntervalMS int    `json:"rate_interval_ms"`
-		Agents         []struct {
+		Goal               string `json:"goal"`
+		Concurrency        int    `json:"concurrency"`
+		Thinking           bool   `json:"thinking"`
+		TargetIP           string `json:"target_ip"`
+		RateIntervalMS     int    `json:"rate_interval_ms"`
+		InferenceTimeoutMS int    `json:"inference_timeout_ms"`
+		RetryDelaysMS      []int  `json:"retry_delays_ms"`
+		Agents             []struct {
 			Name  string `json:"name"`
 			Role  string `json:"role"`
 			Model string `json:"model"`
@@ -140,6 +142,22 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(input.Goal) == "" || len(input.Goal) > 4096 || input.Concurrency < 1 || input.Concurrency > 32 || len(input.Agents) == 0 || len(input.Agents) > 200 {
 		http.Error(w, "invalid goal, concurrency, or agent count", 400)
 		return
+	}
+	if input.InferenceTimeoutMS == 0 {
+		input.InferenceTimeoutMS = 600000
+	}
+	if input.RetryDelaysMS == nil {
+		input.RetryDelaysMS = []int{2000, 10000, 30000}
+	}
+	if input.InferenceTimeoutMS < 1000 || input.InferenceTimeoutMS > 3600000 || len(input.RetryDelaysMS) > 10 {
+		http.Error(w, "invalid inference recovery policy", 400)
+		return
+	}
+	for _, delay := range input.RetryDelaysMS {
+		if delay < 1 || delay > 3600000 {
+			http.Error(w, "invalid retry delay", 400)
+			return
+		}
 	}
 	if input.TargetIP != "" || input.RateIntervalMS != 0 {
 		ip := net.ParseIP(input.TargetIP)
@@ -170,7 +188,7 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 		failure(w, e)
 		return
 	}
-	s := store.Session{ID: sid, Goal: input.Goal, Concurrency: input.Concurrency, Status: "running", TargetIP: input.TargetIP, RateIntervalMS: input.RateIntervalMS}
+	s := store.Session{ID: sid, Goal: input.Goal, Concurrency: input.Concurrency, Status: "running", TargetIP: input.TargetIP, RateIntervalMS: input.RateIntervalMS, InferenceTimeoutMS: input.InferenceTimeoutMS, RetryDelaysMS: input.RetryDelaysMS}
 	agents := make([]store.Agent, 0, len(input.Agents))
 	for _, a := range input.Agents {
 		aid, e := id()

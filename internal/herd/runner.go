@@ -465,7 +465,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			go func() {
 				var reply ollama.Reply
 				var err error
-				attemptCtx, cancel := context.WithTimeout(x.ctx, 10*time.Minute)
+				attemptCtx, cancel := context.WithTimeout(x.ctx, time.Duration(s.InferenceTimeoutMS)*time.Millisecond)
 				defer cancel()
 				if client, ok := r.infer.(interface {
 					ChatWithThinking(context.Context, string, []ollama.Message, bool) (ollama.Reply, error)
@@ -538,9 +538,8 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			}
 			failures := recovery.Failures + 1
 			var next time.Time
-			if failures <= 3 {
-				delays := []time.Duration{2 * time.Second, 10 * time.Second, 30 * time.Second}
-				delay := delays[failures-1]
+			if failures <= len(s.RetryDelaysMS) {
+				delay := time.Duration(s.RetryDelaysMS[failures-1]) * time.Millisecond
 				next = time.Now().Add(delay + time.Duration(rand.Int63n(int64(delay/5)+1)))
 			}
 			if saveErr := r.store.RecordFailure(context.Background(), s.ID, a.ID, category, reason, excerpt, next, failures); saveErr != nil {

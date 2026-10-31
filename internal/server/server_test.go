@@ -16,6 +16,44 @@ import (
 
 type fake struct{}
 
+func TestInferenceRecoveryPolicy(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+	for _, tc := range []struct {
+		body   string
+		status int
+	}{
+		{`{"goal":"test","concurrency":1,"inference_timeout_ms":5000,"retry_delays_ms":[],"agents":[{"name":"Ada","role":"leader","model":"m"}]}`, 201},
+		{`{"goal":"test","concurrency":1,"inference_timeout_ms":20,"agents":[{"name":"Ada","role":"leader","model":"m"}]}`, 400},
+		{`{"goal":"test","concurrency":1,"retry_delays_ms":[0],"agents":[{"name":"Ada","role":"leader","model":"m"}]}`, 400},
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions", bytes.NewBufferString(tc.body)))
+		if w.Code != tc.status {
+			t.Fatalf("%d: %s", w.Code, w.Body.String())
+		}
+		if tc.status == 201 {
+			var result struct {
+				Session store.Session `json:"session"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			saved, _, err := s.GetSession(ctx, result.Session.ID)
+			if err != nil || saved.InferenceTimeoutMS != 5000 || saved.RetryDelaysMS == nil || len(saved.RetryDelaysMS) != 0 {
+				t.Fatalf("%+v %v", saved, err)
+			}
+		}
+	}
+}
+
 func TestHumanDirectMessage(t *testing.T) {
 	ctx := context.Background()
 	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
