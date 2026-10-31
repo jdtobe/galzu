@@ -19,9 +19,13 @@ async function refresh() {
   $('status').textContent = `Session: ${status}`;
   $('pause').textContent = status === 'paused' ? 'Resume herd' : 'Pause herd';
   $('agents').replaceChildren();
+  const recipients = $('recipient');
+  const selectedRecipient = recipients.value;
+  recipients.replaceChildren(new Option('Everyone', ''));
   const names = {};
   for (const agent of data.agents || []) {
     names[agent.id] = agent.name;
+    recipients.add(new Option(`${agent.name} (${agent.role})`, agent.id));
     const li = document.createElement('li');
     const heading = document.createElement('strong');
     heading.textContent = agent.name;
@@ -45,6 +49,7 @@ async function refresh() {
     li.append(heading, description, label);
     $('agents').append(li);
   }
+  recipients.value = [...recipients.options].some(option => option.value === selectedRecipient) ? selectedRecipient : '';
   const container = $('messages');
   const follow = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
   const previousScroll = container.scrollTop;
@@ -93,5 +98,5 @@ async function openSession(id) {
 }
 $('create').onsubmit = async e => { e.preventDefault(); try { const f = new FormData(e.target); const agents = f.get('agents').split('\n').filter(x=>x.trim()).map(line=>{ const [name,role,model] = line.split(',').map(x=>x.trim()); return {name,role,model}; }); const result = await api('/api/sessions',post({goal:f.get('goal'),concurrency:Number(f.get('concurrency')),thinking:f.has('thinking'),agents,target_ip:f.get('target_ip').trim(),rate_interval_ms:Number(f.get('rate_interval_ms'))})); await openSession(result.session.id); } catch(err) {report(err);} };
 $('open').onsubmit = async e => {e.preventDefault(); try {await openSession(new FormData(e.target).get('id'));} catch(err){report(err);} };
-$('send').onsubmit = async e => {e.preventDefault(); try {await api(`/api/sessions/${encodeURIComponent(current)}/messages`,post({body:new FormData(e.target).get('body')})); e.target.reset(); await refresh();} catch(err){report(err);} };
+$('send').onsubmit = async e => {e.preventDefault(); try {const f = new FormData(e.target); await api(`/api/sessions/${encodeURIComponent(current)}/messages`,post({body:f.get('body'),recipient_id:f.get('recipient_id')})); e.target.elements.body.value = ''; await refresh();} catch(err){report(err);} };
 $('pause').onclick = async () => {try {await api(`/api/sessions/${encodeURIComponent(current)}/${status==='paused'?'resume':'pause'}`,post({})); await refresh();} catch(err){report(err);} };

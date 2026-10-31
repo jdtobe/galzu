@@ -16,6 +16,43 @@ import (
 
 type fake struct{}
 
+func TestHumanDirectMessage(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	agents := []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}
+	if err := s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "paused", Concurrency: 1}, agents); err != nil {
+		t.Fatal(err)
+	}
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+	for _, tc := range []struct {
+		body   string
+		status int
+	}{
+		{`{"body":"private","recipient_id":"a"}`, 201},
+		{`{"body":"wrong recipient","recipient_id":"other"}`, 400},
+		{`{"body":"public"}`, 201},
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions/s/messages", bytes.NewBufferString(tc.body)))
+		if w.Code != tc.status {
+			t.Fatalf("%s: %d %s", tc.body, w.Code, w.Body.String())
+		}
+	}
+	messages, err := s.Messages(ctx, "s", 0)
+	if err != nil || len(messages) != 2 {
+		t.Fatalf("%+v %v", messages, err)
+	}
+	if messages[0].RecipientID != "a" || messages[0].Kind != "direct" || messages[0].AgentID != "" || messages[1].RecipientID != "" {
+		t.Fatalf("%+v", messages)
+	}
+}
+
 func (fake) Chat(context.Context, string, []ollama.Message) (ollama.Reply, error) {
 	return ollama.Reply{Action: "rest"}, nil
 }

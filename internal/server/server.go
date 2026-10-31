@@ -190,18 +190,35 @@ func (v *server) snapshot(w http.ResponseWriter, r *http.Request) {
 }
 func (v *server) message(w http.ResponseWriter, r *http.Request) {
 	sid := r.PathValue("id")
-	if _, _, e := v.s.GetSession(r.Context(), sid); e != nil {
+	_, agents, e := v.s.GetSession(r.Context(), sid)
+	if e != nil {
 		failure(w, e)
 		return
 	}
 	var x struct {
-		Body string `json:"body"`
+		Body        string `json:"body"`
+		RecipientID string `json:"recipient_id"`
 	}
 	if e := decode(w, r, &x); e != nil || strings.TrimSpace(x.Body) == "" || len(x.Body) > 4096 {
 		http.Error(w, "invalid message", 400)
 		return
 	}
-	m, e := v.s.AppendMessage(r.Context(), sid, "", x.Body)
+	kind := ""
+	if x.RecipientID != "" {
+		found := false
+		for _, agent := range agents {
+			if agent.ID == x.RecipientID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			http.Error(w, "recipient not found in session", 400)
+			return
+		}
+		kind = "direct"
+	}
+	m, e := v.s.AppendSocialMessage(r.Context(), sid, "", x.RecipientID, kind, x.Body, "")
 	if e != nil {
 		failure(w, e)
 		return
