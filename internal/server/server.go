@@ -194,7 +194,24 @@ func (v *server) snapshot(w http.ResponseWriter, r *http.Request) {
 		failure(w, e)
 		return
 	}
-	respond(w, 200, map[string]any{"session": s, "agents": a, "messages": m, "activity": v.r.Activity(s.ID)})
+	failures, e := v.s.Failures(r.Context(), s.ID)
+	if e != nil {
+		failure(w, e)
+		return
+	}
+	recoveries := map[string]store.Recovery{}
+	for _, agent := range a {
+		recovery, err := v.s.Recovery(r.Context(), agent.ID)
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		if recovery.Failures > 0 {
+			recovery.Excerpt = ""
+			recoveries[agent.ID] = recovery
+		}
+	}
+	respond(w, 200, map[string]any{"session": s, "agents": a, "messages": m, "activity": v.r.Activity(s.ID), "failures": failures, "recoveries": recoveries})
 }
 func (v *server) message(w http.ResponseWriter, r *http.Request) {
 	sid := r.PathValue("id")

@@ -70,6 +70,9 @@ func Open(path string) (*Store, error) {
 	if err == nil {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_checkpoints(agent_id TEXT PRIMARY KEY REFERENCES agents(id), message_id INTEGER NOT NULL)`)
 	}
+	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_recovery(agent_id TEXT PRIMARY KEY REFERENCES agents(id), failures INTEGER NOT NULL, next_at TEXT NOT NULL, category TEXT NOT NULL, reason TEXT NOT NULL, excerpt TEXT NOT NULL); CREATE TABLE IF NOT EXISTS agent_failures(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL REFERENCES sessions(id), agent_id TEXT NOT NULL REFERENCES agents(id), attempt INTEGER NOT NULL, category TEXT NOT NULL, reason TEXT NOT NULL, excerpt TEXT NOT NULL, created_at TEXT NOT NULL)`)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -77,6 +80,86 @@ func Open(path string) (*Store, error) {
 	return &Store{db}, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
+
+type Recovery struct {
+	Failures int       `json:"failures"`
+	NextAt   time.Time `json:"next_at"`
+	Category string    `json:"category"`
+	Reason   string    `json:"reason"`
+	Excerpt  string    `json:"excerpt,omitempty"`
+}
+type Failure struct {
+	AgentID   string `json:"agent_id"`
+	Attempt   int    `json:"attempt"`
+	Category  string `json:"category"`
+	Reason    string `json:"reason"`
+	Excerpt   string `json:"excerpt,omitempty"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (s *Store) Failures(ctx context.Context, sessionID string) ([]Failure, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT agent_id,attempt,category,reason,excerpt,created_at FROM agent_failures WHERE session_id=? ORDER BY id`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Failure
+	for rows.Next() {
+		var f Failure
+		if err = rows.Scan(&f.AgentID, &f.Attempt, &f.Category, &f.Reason, &f.Excerpt, &f.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) Recovery(ctx context.Context, agentID string) (Recovery, error) {
+	var v Recovery
+	var next string
+	err := s.db.QueryRowContext(ctx, `SELECT failures,next_at,category,reason,excerpt FROM agent_recovery WHERE agent_id=?`, agentID).Scan(&v.Failures, &next, &v.Category, &v.Reason, &v.Excerpt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return v, nil
+	}
+	if err != nil {
+		return v, err
+	}
+	if next != "" {
+		v.NextAt, err = time.Parse(time.RFC3339Nano, next)
+	}
+	return v, err
+}
+
+func (s *Store) RecordFailure(ctx context.Context, sid, aid, category, reason, excerpt string, next time.Time, failures int) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	nextText := ""
+	if !next.IsZero() {
+		nextText = next.UTC().Format(time.RFC3339Nano)
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO agent_recovery VALUES(?,?,?,?,?,?) ON CONFLICT(agent_id) DO UPDATE SET failures=excluded.failures,next_at=excluded.next_at,category=excluded.category,reason=excluded.reason,excerpt=excluded.excerpt`, aid, failures, nextText, category, reason, excerpt)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO agent_failures(session_id,agent_id,attempt,category,reason,excerpt,created_at) VALUES(?,?,?,?,?,?,?)`, sid, aid, failures, category, reason, excerpt, time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return err
+	}
+	if next.IsZero() {
+		if _, err = tx.ExecContext(ctx, `UPDATE agents SET status='error',error=? WHERE id=? AND session_id=?`, reason, aid, sid); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) ClearRecovery(ctx context.Context, aid string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM agent_recovery WHERE agent_id=?`, aid)
+	return err
+}
 func event(ctx context.Context, tx *sql.Tx, id, kind string, payload any) error {
 	b, e := json.Marshal(payload)
 	if e != nil {
@@ -133,6 +216,31 @@ func (s *Store) Checkpoint(ctx context.Context, sessionID, agentID string) (int6
 func (s *Store) SetCheckpoint(ctx context.Context, sessionID, agentID string, last int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE agent_checkpoints SET message_id=MAX(message_id,?) WHERE agent_id=? AND EXISTS (SELECT 1 FROM agents WHERE id=? AND session_id=?)`, last, agentID, agentID, sessionID)
 	return err
+}
+func (s *Store) CompleteRest(ctx context.Context, sessionID, agentID string, last int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `UPDATE agent_checkpoints SET message_id=MAX(message_id,?) WHERE agent_id=? AND EXISTS (SELECT 1 FROM agents WHERE id=? AND session_id=?)`, last, agentID, agentID, sessionID)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return sql.ErrNoRows
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM agent_recovery WHERE agent_id=?`, agentID); err != nil {
+		return err
+	}
+	if err = event(ctx, tx, sessionID, "agent_rest", map[string]any{"agent_id": agentID, "checkpoint": last}); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 func (s *Store) GetSession(ctx context.Context, id string) (Session, []Agent, error) {
 	var v Session
@@ -283,6 +391,9 @@ func (s *Store) appendSocialMessage(ctx context.Context, sid, aid, recipient, ki
 		}
 		if count != 1 {
 			return m, sql.ErrNoRows
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM agent_recovery WHERE agent_id=?`, aid); err != nil {
+			return m, err
 		}
 	}
 	return m, tx.Commit()

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +20,21 @@ type Reply struct {
 	Thinking  string `json:"thinking,omitempty"`
 	Recipient string `json:"recipient,omitempty"`
 }
+
+// ValidationError describes a rejected model action. Excerpt is untrusted and
+// may contain private data; it must not be written to ordinary logs.
+type ValidationError struct{ Reason, Excerpt string }
+type ContextLimitError struct{}
+
+func (*ContextLimitError) Error() string { return "model context window exceeded" }
+func (e *ValidationError) Error() string { return e.Reason }
+func invalid(reason, content string) error {
+	if len(content) > 1024 {
+		content = content[:1024]
+	}
+	return &ValidationError{Reason: reason, Excerpt: strings.ToValidUTF8(content, "�")}
+}
+
 type Client struct {
 	base string
 	http *http.Client
@@ -52,6 +66,11 @@ func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
+		body, _ := io.ReadAll(io.LimitReader(res.Body, 8192))
+		text := strings.ToLower(string(body))
+		if strings.Contains(text, "context") && (strings.Contains(text, "exceed") || strings.Contains(text, "too long") || strings.Contains(text, "maximum")) {
+			return out, &ContextLimitError{}
+		}
 		return out, fmt.Errorf("ollama returned %s", res.Status)
 	}
 	var response struct {
@@ -64,17 +83,20 @@ func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []
 		return out, e
 	}
 	if e = json.Unmarshal([]byte(response.Message.Content), &out); e != nil {
-		return out, fmt.Errorf("invalid social response: %w", e)
+		return out, invalid("response is not valid JSON", response.Message.Content)
 	}
 	out.Thinking = ""
 	if think {
 		out.Thinking = response.Message.Thinking
 	}
 	if out.Action != "message" && out.Action != "rest" && out.Action != "direct" && out.Action != "help" {
-		return out, errors.New("invalid action")
+		return out, invalid("unknown action; use message, direct, help, or rest", response.Message.Content)
 	}
-	if out.Action != "rest" && (strings.TrimSpace(out.Text) == "" || len(out.Text) > 4096) {
-		return out, errors.New("invalid message length")
+	if out.Action != "rest" && strings.TrimSpace(out.Text) == "" {
+		return out, invalid("message text is empty", response.Message.Content)
+	}
+	if out.Action != "rest" && len(out.Text) > 4096 {
+		return out, invalid("message text exceeds 4096 bytes", response.Message.Content)
 	}
 	return out, nil
 }

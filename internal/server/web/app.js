@@ -1,5 +1,6 @@
 let current = '', stream, status = '';
 let refreshSequence = 0;
+let currentAgents = [];
 const $ = id => document.getElementById(id);
 async function api(path, options) {
   const response = await fetch(path, options);
@@ -14,9 +15,12 @@ async function refresh() {
   const data = await api(`/api/sessions/${encodeURIComponent(id)}`);
   if (id !== current || sequence !== refreshSequence) return;
   status = data.session.status;
+  currentAgents = data.agents || [];
   $('goal').textContent = data.session.goal;
   $('sid').textContent = `Session ID: ${current}`;
   $('status').textContent = `Session: ${status}`;
+  const serviceErrors = Object.entries(data.recoveries || {}).filter(([id, recovery]) => recovery.category === 'inference' && currentAgents.some(a => a.id === id)).length;
+  if (serviceErrors >= 2) $('status').textContent += ' · Multiple agents are experiencing inference-service errors';
   $('pause').textContent = status === 'paused' ? 'Resume herd' : 'Pause herd';
   $('agents').replaceChildren();
   const recipients = $('recipient');
@@ -34,6 +38,8 @@ async function refresh() {
     const activity = (data.activity || {})[agent.id];
     description.textContent = `${agent.role} · ${agent.status === 'error' ? 'error' : (activity?.state || 'idle')}${agent.error ? ' — ' + agent.error : ''}`;
     if (activity) description.textContent += ` · queue ${activity.queue_ms} ms · inference ${activity.inference_ms} ms · prompt ${activity.prompt_bytes} bytes`;
+    const recovery = (data.recoveries || {})[agent.id];
+    if (recovery) description.textContent += ` · failed attempts ${recovery.failures} · ${recovery.reason}`;
     const label = document.createElement('label');
     label.className = 'thinking-setting';
     const checkbox = document.createElement('input');
@@ -47,10 +53,10 @@ async function refresh() {
     };
     label.append(checkbox, document.createTextNode(' Request model thinking (if supported)'));
     li.append(heading, description, label);
-    if (agent.status === 'error') {
+    if (agent.status === 'error' || activity?.state === 'retrying') {
       const retry = document.createElement('button');
       retry.type = 'button';
-      retry.textContent = 'Retry agent';
+      retry.textContent = activity?.state === 'retrying' ? 'Retry now' : 'Retry agent';
       retry.onclick = async () => {
         retry.disabled = true;
         try { await api(`/api/sessions/${encodeURIComponent(current)}/agents/${encodeURIComponent(agent.id)}/retry`, post({})); await refresh(); }
@@ -58,9 +64,29 @@ async function refresh() {
       };
       li.append(retry);
     }
+    const failures = (data.failures || []).filter(f => f.agent_id === agent.id);
+    if (failures.length) {
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = `Failure history (${failures.length})`;
+      details.append(summary);
+      for (const failure of failures) {
+        const line = document.createElement('p');
+        line.textContent = `${failure.created_at} · attempt ${failure.attempt} · ${failure.category}: ${failure.reason}`;
+        details.append(line);
+        if (failure.excerpt) {
+          const excerpt = document.createElement('details');
+          const label = document.createElement('summary'); label.textContent = 'Rejected output (untrusted; may contain private data)';
+          const content = document.createElement('pre'); content.textContent = failure.excerpt;
+          excerpt.append(label, content); details.append(excerpt);
+        }
+      }
+      li.append(details);
+    }
     $('agents').append(li);
   }
   recipients.value = [...recipients.options].some(option => option.value === selectedRecipient) ? selectedRecipient : '';
+  updateRecipientWarning();
   const container = $('messages');
   const follow = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
   const previousScroll = container.scrollTop;
@@ -96,6 +122,12 @@ async function refresh() {
   if (follow) container.scrollTop = container.scrollHeight;
   else container.scrollTop = previousScroll;
 }
+function updateRecipientWarning() {
+  const recipient = $('recipient').value;
+  const failed = currentAgents.filter(a => a.status === 'error' && (!recipient || a.id === recipient));
+  $('recipient-warning').textContent = failed.length ? `Needs attention: ${failed.map(a => a.name).join(', ')}. Messages will remain pending until retry.` : '';
+}
+$('recipient').onchange = updateRecipientWarning;
 async function openSession(id) {
   current = id;
   await refresh();

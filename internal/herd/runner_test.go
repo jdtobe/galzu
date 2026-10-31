@@ -13,6 +13,90 @@ import (
 
 type capturePrompts struct{ prompts chan []ollama.Message }
 
+type invalidThenRest struct {
+	prompts chan []ollama.Message
+	count   int
+}
+
+func (f *invalidThenRest) Chat(_ context.Context, _ string, p []ollama.Message) (ollama.Reply, error) {
+	f.count++
+	f.prompts <- p
+	if f.count == 1 {
+		return ollama.Reply{}, &ollama.ValidationError{Reason: "message text is empty", Excerpt: `{"text":""}`}
+	}
+	return ollama.Reply{Action: "rest"}, nil
+}
+func TestInvalidActionRetrySeesFeedbackAndNewMessages(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1}, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	f := &invalidThenRest{prompts: make(chan []ollama.Message, 2)}
+	r := New(s, f)
+	defer r.Stop()
+	if err := r.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AppendMessage(ctx, "s", "", "first"); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	select {
+	case <-f.prompts:
+	case <-time.After(time.Second):
+		t.Fatal("no initial attempt")
+	}
+	deadline := time.Now().Add(time.Second)
+	for r.Activity("s")["a"].State != "retrying" {
+		if time.Now().After(deadline) {
+			t.Fatal("no retry")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if _, err := s.AppendMessage(ctx, "s", "", "new information"); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	if err := r.RetryAgent("s", "a"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case p := <-f.prompts:
+		var text strings.Builder
+		for _, m := range p {
+			text.WriteString(m.Content)
+		}
+		if !strings.Contains(text.String(), "new information") || !strings.Contains(text.String(), "message text is empty") {
+			t.Fatal(text.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no retry attempt")
+	}
+	deadline = time.Now().Add(time.Second)
+	for {
+		v, err := s.Recovery(ctx, "a")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v.Failures == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("recovery not cleared")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	history, err := s.Failures(ctx, "s")
+	if err != nil || len(history) != 1 || history[0].Category != "validation" {
+		t.Fatalf("%+v %v", history, err)
+	}
+}
+
 func TestPendingBacklogProcessedInOrder(t *testing.T) {
 	ctx := context.Background()
 	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
@@ -87,15 +171,11 @@ func TestRetryFailedAgent(t *testing.T) {
 	}
 	deadline := time.Now().Add(time.Second)
 	for {
-		_, agents, err := s.GetSession(ctx, "s")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if agents[0].Status == "error" {
+		if r.Activity("s")["a"].State == "retrying" {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("no error status")
+			t.Fatal("no retrying status")
 		}
 		time.Sleep(time.Millisecond)
 	}

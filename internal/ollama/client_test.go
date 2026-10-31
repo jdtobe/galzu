@@ -66,3 +66,15 @@ func TestInvalidResponse(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestContextLimitResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(400)
+		_, _ = w.Write([]byte(`{"error":"context window exceeded"}`))
+	}))
+	defer srv.Close()
+	_, err := New(srv.URL, srv.Client()).Chat(context.Background(), "m", nil)
+	if _, ok := err.(*ContextLimitError); !ok {
+		t.Fatalf("expected context limit, got %v", err)
+	}
+}
