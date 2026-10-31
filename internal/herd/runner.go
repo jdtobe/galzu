@@ -99,15 +99,18 @@ func (r *Runner) start(ctx context.Context, id string, resume bool) error {
 		x.resume = make(chan struct{})
 	}
 	r.runs[id] = x
-	history, err := r.store.Messages(ctx, id, 0)
-	if err != nil {
-		delete(r.runs, id)
-		cancel()
-		return err
-	}
-	var last int64
-	if len(history) > 0 {
-		last = history[len(history)-1].ID
+	checkpoints := make(map[string]int64, len(agents))
+	for _, a := range agents {
+		if a.Status != "ready" {
+			continue
+		}
+		last, err := r.store.Checkpoint(ctx, id, a.ID)
+		if err != nil {
+			delete(r.runs, id)
+			cancel()
+			return err
+		}
+		checkpoints[a.ID] = last
 	}
 	for _, a := range agents {
 		if a.Status != "ready" {
@@ -115,7 +118,8 @@ func (r *Runner) start(ctx context.Context, id string, resume bool) error {
 		}
 		ch := make(chan struct{}, 1)
 		x.wakes[a.ID] = ch
-		go r.worker(x, s, a, last, ch)
+		go r.worker(x, s, a, checkpoints[a.ID], ch)
+		ch <- struct{}{}
 	}
 	r.changed(id)
 	return nil
@@ -197,6 +201,9 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			last = m.ID
 		}
 		if !trigger {
+			if err := r.store.SetCheckpoint(x.ctx, s.ID, a.ID, last); err != nil {
+				return
+			}
 			continue
 		}
 		all, err := r.store.Messages(x.ctx, s.ID, 0)
@@ -352,15 +359,19 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 					valid = true
 				}
 			}
-			if !valid {
-				r.mu.Unlock()
-				continue
-			}
-			_, err = r.store.AppendSocialMessage(context.Background(), s.ID, a.ID, recipient, kind, reply.Text, reply.Thinking)
-			if err == nil {
-				r.notifyLocked(s.ID)
+			if valid {
+				_, err = r.store.AppendSocialMessage(context.Background(), s.ID, a.ID, recipient, kind, reply.Text, reply.Thinking)
+				if err == nil {
+					r.notifyLocked(s.ID)
+				}
 			}
 		}
+		if err == nil {
+			err = r.store.SetCheckpoint(context.Background(), s.ID, a.ID, last)
+		}
 		r.mu.Unlock()
+		if err != nil {
+			return
+		}
 	}
 }

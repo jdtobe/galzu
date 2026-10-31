@@ -67,6 +67,9 @@ func Open(path string) (*Store, error) {
 	if err == nil {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS message_routing(message_id INTEGER PRIMARY KEY REFERENCES messages(id), recipient_id TEXT NOT NULL, kind TEXT NOT NULL)`)
 	}
+	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_checkpoints(agent_id TEXT PRIMARY KEY REFERENCES agents(id), message_id INTEGER NOT NULL)`)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -105,11 +108,31 @@ func (s *Store) CreateSession(ctx context.Context, v Session, agents []Agent) er
 				return e
 			}
 		}
+		if _, e = tx.ExecContext(ctx, `INSERT INTO agent_checkpoints(agent_id,message_id) VALUES(?,0)`, a.ID); e != nil {
+			return e
+		}
 	}
 	if e = event(ctx, tx, v.ID, "session_created", v); e != nil {
 		return e
 	}
 	return tx.Commit()
+}
+
+// Checkpoint initializes agents from older databases at the current end of
+// history, avoiding unexpected replay when upgrading an existing session.
+func (s *Store) Checkpoint(ctx context.Context, sessionID, agentID string) (int64, error) {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO agent_checkpoints(agent_id,message_id) SELECT id, COALESCE((SELECT MAX(id) FROM messages WHERE session_id=?),0) FROM agents WHERE id=? AND session_id=? ON CONFLICT(agent_id) DO NOTHING`, sessionID, agentID, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	var last int64
+	err = s.db.QueryRowContext(ctx, `SELECT c.message_id FROM agent_checkpoints c JOIN agents a ON a.id=c.agent_id WHERE a.id=? AND a.session_id=?`, agentID, sessionID).Scan(&last)
+	return last, err
+}
+
+func (s *Store) SetCheckpoint(ctx context.Context, sessionID, agentID string, last int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE agent_checkpoints SET message_id=MAX(message_id,?) WHERE agent_id=? AND EXISTS (SELECT 1 FROM agents WHERE id=? AND session_id=?)`, last, agentID, agentID, sessionID)
+	return err
 }
 func (s *Store) GetSession(ctx context.Context, id string) (Session, []Agent, error) {
 	var v Session

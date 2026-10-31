@@ -13,6 +13,59 @@ import (
 
 type capturePrompts struct{ prompts chan []ollama.Message }
 
+func TestResumeProcessesPendingMessagesOnce(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "paused", Concurrency: 1}, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AppendMessage(ctx, "s", "", "while offline"); err != nil {
+		t.Fatal(err)
+	}
+	f := capturePrompts{make(chan []ollama.Message, 2)}
+	r := New(s, f)
+	if err := r.Resume("s"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case prompt := <-f.prompts:
+		if !strings.Contains(prompt[len(prompt)-1].Content, "while offline") {
+			t.Fatal(prompt)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending message not delivered")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		n, err := s.Checkpoint(ctx, "s", "a")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("checkpoint not saved")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	r.Stop()
+	r2 := New(s, f)
+	defer r2.Stop()
+	if err := r2.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case p := <-f.prompts:
+		t.Fatalf("processed message replayed: %v", p)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 func (f capturePrompts) Chat(_ context.Context, _ string, prompt []ollama.Message) (ollama.Reply, error) {
 	f.prompts <- prompt
 	return ollama.Reply{Action: "rest"}, nil
