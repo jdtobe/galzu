@@ -47,6 +47,17 @@ async function refresh() {
     };
     label.append(checkbox, document.createTextNode(' Request model thinking (if supported)'));
     li.append(heading, description, label);
+    if (agent.status === 'error') {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.textContent = 'Retry agent';
+      retry.onclick = async () => {
+        retry.disabled = true;
+        try { await api(`/api/sessions/${encodeURIComponent(current)}/agents/${encodeURIComponent(agent.id)}/retry`, post({})); await refresh(); }
+        catch (error) { report(error); retry.disabled = false; }
+      };
+      li.append(retry);
+    }
     $('agents').append(li);
   }
   recipients.value = [...recipients.options].some(option => option.value === selectedRecipient) ? selectedRecipient : '';

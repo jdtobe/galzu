@@ -13,6 +13,89 @@ import (
 
 type capturePrompts struct{ prompts chan []ollama.Message }
 
+type failingOnce struct {
+	calls chan int
+	count int
+}
+
+func (f *failingOnce) Chat(context.Context, string, []ollama.Message) (ollama.Reply, error) {
+	f.count++
+	f.calls <- f.count
+	if f.count == 1 {
+		return ollama.Reply{}, fmt.Errorf("model unavailable")
+	}
+	return ollama.Reply{Action: "message", Text: "recovered"}, nil
+}
+
+func TestRetryFailedAgent(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1}, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	f := &failingOnce{calls: make(chan int, 2)}
+	r := New(s, f)
+	defer r.Stop()
+	if err := r.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AppendMessage(ctx, "s", "", "question"); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	select {
+	case <-f.calls:
+	case <-time.After(time.Second):
+		t.Fatal("no inference")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		_, agents, err := s.GetSession(ctx, "s")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if agents[0].Status == "error" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no error status")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err := r.RetryAgent("s", "a"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case n := <-f.calls:
+		if n != 2 {
+			t.Fatal(n)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("retry did not start")
+	}
+	deadline = time.Now().Add(time.Second)
+	for {
+		messages, err := s.Messages(ctx, "s", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(messages) == 2 {
+			if messages[1].Body != "recovered" {
+				t.Fatal(messages)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no recovered reply")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestResumeProcessesPendingMessagesOnce(t *testing.T) {
 	ctx := context.Background()
 	s, err := store.Open(filepath.Join(t.TempDir(), "db"))

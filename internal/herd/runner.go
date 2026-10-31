@@ -125,6 +125,46 @@ func (r *Runner) start(ctx context.Context, id string, resume bool) error {
 	return nil
 }
 func (r *Runner) Resume(id string) error { return r.start(context.Background(), id, true) }
+
+// RetryAgent restarts a failed worker from its last committed checkpoint.
+func (r *Runner) RetryAgent(sessionID, agentID string) error {
+	if err := r.Start(context.Background(), sessionID); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	x := r.runs[sessionID]
+	if x == nil || r.stopped {
+		return fmt.Errorf("session is not active")
+	}
+	s, agents, err := r.store.GetSession(context.Background(), sessionID)
+	if err != nil {
+		return err
+	}
+	for _, a := range agents {
+		if a.ID != agentID {
+			continue
+		}
+		if a.Status != "error" {
+			return fmt.Errorf("agent is not in error")
+		}
+		last, err := r.store.Checkpoint(context.Background(), sessionID, agentID)
+		if err != nil {
+			return err
+		}
+		if err = r.store.SetAgentStatus(context.Background(), agentID, "ready", ""); err != nil {
+			return err
+		}
+		a.Status, a.Error = "ready", ""
+		ch := make(chan struct{}, 1)
+		x.wakes[agentID] = ch
+		go r.worker(x, s, a, last, ch)
+		ch <- struct{}{}
+		r.changed(sessionID)
+		return nil
+	}
+	return fmt.Errorf("agent not found")
+}
 func (r *Runner) Pause(id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
