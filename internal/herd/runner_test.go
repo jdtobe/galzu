@@ -13,6 +13,81 @@ import (
 
 type capturePrompts struct{ prompts chan []ollama.Message }
 
+type contextThenRest struct {
+	prompts chan []ollama.Message
+	count   int
+}
+
+func (f *contextThenRest) Chat(_ context.Context, _ string, p []ollama.Message) (ollama.Reply, error) {
+	f.count++
+	f.prompts <- p
+	if f.count == 1 {
+		return ollama.Reply{}, &ollama.ContextLimitError{}
+	}
+	return ollama.Reply{Action: "rest"}, nil
+}
+func TestContextLimitRetriesSmallerPendingBatch(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1}, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 50; i++ {
+		if _, err = s.AppendMessage(ctx, "s", "", fmt.Sprintf("item-%03d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := &contextThenRest{prompts: make(chan []ollama.Message, 4)}
+	r := New(s, f)
+	defer r.Stop()
+	if err = r.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-f.prompts:
+	case <-time.After(time.Second):
+		t.Fatal("no attempt")
+	}
+	deadline := time.Now().Add(time.Second)
+	for r.Activity("s")["a"].State != "retrying" {
+		if time.Now().After(deadline) {
+			t.Fatal("not retrying")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if err = r.RetryAgent("s", "a"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case p := <-f.prompts:
+		var text strings.Builder
+		for _, m := range p {
+			text.WriteString(m.Content)
+		}
+		if !strings.Contains(text.String(), "item-025") || strings.Contains(text.String(), "item-026") || !strings.Contains(text.String(), "context window") {
+			t.Fatalf("bad retry: %s", text.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no retry")
+	}
+	select {
+	case p := <-f.prompts:
+		var text strings.Builder
+		for _, m := range p {
+			text.WriteString(m.Content)
+		}
+		if !strings.Contains(text.String(), "item-050") {
+			t.Fatal("remaining backlog omitted")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("backlog stalled")
+	}
+}
+
 func TestStorageFailureRequiresExplicitRecovery(t *testing.T) {
 	ctx := context.Background()
 	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
