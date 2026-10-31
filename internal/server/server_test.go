@@ -70,6 +70,78 @@ func TestAgentThinkingSetting(t *testing.T) {
 		t.Fatalf("%+v %v", agents, err)
 	}
 }
+
+type thinkingObserver struct{ requested chan bool }
+
+func (f thinkingObserver) Chat(context.Context, string, []ollama.Message) (ollama.Reply, error) {
+	return ollama.Reply{Action: "rest"}, nil
+}
+func (f thinkingObserver) ChatWithThinking(_ context.Context, _ string, _ []ollama.Message, thinking bool) (ollama.Reply, error) {
+	f.requested <- thinking
+	return ollama.Reply{Action: "rest"}, nil
+}
+
+func TestSessionThinkingDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name, field string
+		want        bool
+	}{
+		{"omitted", "", false}, {"enabled", `,"thinking":true`, true}, {"disabled", `,"thinking":false`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			observer := thinkingObserver{make(chan bool, 2)}
+			r := herd.New(s, observer)
+			defer r.Stop()
+			h := New(s, r)
+			body := `{"goal":"test","concurrency":2` + tc.field + `,"agents":[{"name":"Ada","role":"leader","model":"m"},{"name":"Bea","role":"helper","model":"m"}]}`
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions", bytes.NewBufferString(body)))
+			if w.Code != http.StatusCreated {
+				t.Fatalf("%d %s", w.Code, w.Body.String())
+			}
+			var created struct {
+				Session store.Session `json:"session"`
+				Agents  []store.Agent `json:"agents"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+				t.Fatal(err)
+			}
+			_, agents, err := s.GetSession(context.Background(), created.Session.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(agents) != 2 || len(created.Agents) != 2 {
+				t.Fatalf("agents: %+v", agents)
+			}
+			for i, agent := range agents {
+				if agent.Thinking != tc.want || created.Agents[i].Thinking != tc.want {
+					t.Fatalf("agent: %+v", agent)
+				}
+				select {
+				case got := <-observer.requested:
+					if got != tc.want {
+						t.Fatalf("initial inference thinking = %v", got)
+					}
+				case <-time.After(time.Second):
+					t.Fatal("no initial inference")
+				}
+			}
+			if err := s.SetThinking(context.Background(), created.Session.ID, agents[0].ID, !tc.want); err != nil {
+				t.Fatal(err)
+			}
+			_, agents, err = s.GetSession(context.Background(), created.Session.ID)
+			if err != nil || agents[0].Thinking == tc.want || agents[1].Thinking != tc.want {
+				t.Fatalf("override: %+v %v", agents, err)
+			}
+		})
+	}
+}
+
 func TestRejectInvalid(t *testing.T) {
 	s, _ := store.Open(filepath.Join(t.TempDir(), "db"))
 	defer s.Close()

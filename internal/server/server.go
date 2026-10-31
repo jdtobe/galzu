@@ -104,6 +104,7 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Goal           string `json:"goal"`
 		Concurrency    int    `json:"concurrency"`
+		Thinking       bool   `json:"thinking"`
 		TargetIP       string `json:"target_ip"`
 		RateIntervalMS int    `json:"rate_interval_ms"`
 		Agents         []struct {
@@ -157,7 +158,7 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 			failure(w, e)
 			return
 		}
-		agents = append(agents, store.Agent{ID: aid, SessionID: sid, Name: a.Name, Role: a.Role, Model: a.Model, Status: "ready"})
+		agents = append(agents, store.Agent{ID: aid, SessionID: sid, Name: a.Name, Role: a.Role, Model: a.Model, Status: "ready", Thinking: input.Thinking})
 	}
 	if e = v.s.CreateSession(r.Context(), s, agents); e != nil {
 		failure(w, e)
