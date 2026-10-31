@@ -258,6 +258,92 @@ type failingOnce struct {
 	count int
 }
 
+func TestAutomaticRetryAfterBackoff(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1, InferenceTimeoutMS: 1000, RetryDelaysMS: []int{10}}, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	f := &failingOnce{calls: make(chan int, 2)}
+	r := New(s, f)
+	defer r.Stop()
+	if err = r.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.AppendMessage(ctx, "s", "", "question"); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	for i := 1; i <= 2; i++ {
+		select {
+		case n := <-f.calls:
+			if n != i {
+				t.Fatalf("attempt %d, want %d", n, i)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("automatic retry stalled")
+		}
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		messages, err := s.Messages(ctx, "s", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(messages) == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("reply not saved")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	history, err := s.Failures(ctx, "s")
+	if err != nil || len(history) != 1 {
+		t.Fatalf("failures: %+v %v", history, err)
+	}
+}
+
+func TestRecoveryContinuesAfterRestart(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "paused", Concurrency: 1}, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.AppendMessage(ctx, "s", "", "pending"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RecordFailure(ctx, "s", "a", "validation", "invalid action", "bad output", time.Now().Add(-time.Second), 1); err != nil {
+		t.Fatal(err)
+	}
+	f := capturePrompts{make(chan []ollama.Message, 1)}
+	r := New(s, f)
+	defer r.Stop()
+	if err = r.Resume("s"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case p := <-f.prompts:
+		var text strings.Builder
+		for _, m := range p {
+			text.WriteString(m.Content)
+		}
+		if !strings.Contains(text.String(), "invalid action") || !strings.Contains(text.String(), "pending") {
+			t.Fatal(text.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("persisted retry stalled")
+	}
+}
+
 func (f *failingOnce) Chat(context.Context, string, []ollama.Message) (ollama.Reply, error) {
 	f.count++
 	f.calls <- f.count
