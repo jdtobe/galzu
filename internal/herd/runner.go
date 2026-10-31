@@ -210,13 +210,6 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		if err != nil {
 			return
 		}
-		visible := all[:0]
-		for _, m := range all {
-			if m.RecipientID == "" || m.RecipientID == a.ID || m.AgentID == a.ID {
-				visible = append(visible, m)
-			}
-		}
-		all = visible
 		if len(all) > 50 {
 			all = all[len(all)-50:]
 		}
@@ -244,7 +237,11 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			if m.Kind == "help" {
 				label += " help request"
 			}
-			prompt = append(prompt, ollama.Message{Role: "user", Content: fmt.Sprintf("%s [%s]: %s", sender, label, m.Body)})
+			if m.RecipientID != "" && m.RecipientID != a.ID && m.AgentID != a.ID {
+				prompt = append(prompt, ollama.Message{Role: "user", Content: fmt.Sprintf("Activity notice: %s sent a %s; content is private.", sender, label)})
+			} else {
+				prompt = append(prompt, ollama.Message{Role: "user", Content: fmt.Sprintf("%s [%s]: %s", sender, label, m.Body)})
+			}
 		}
 		activity := Activity{State: "queued"}
 		for _, m := range prompt {

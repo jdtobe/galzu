@@ -124,6 +124,9 @@ func TestPrivateMessagesOnlyReachParticipants(t *testing.T) {
 			if strings.Contains(text, "secret evidence") != (name != "Cy") {
 				t.Fatalf("private content visibility for %s: %s", name, text)
 			}
+			if name == "Cy" && !strings.Contains(text, "content is private") {
+				t.Fatalf("missing private activity notice: %s", text)
+			}
 			seen[name] = true
 		case <-time.After(time.Second):
 			t.Fatalf("missing prompts: %v", seen)
