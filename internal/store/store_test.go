@@ -93,6 +93,44 @@ func TestAgentReplyAndCheckpointAtomic(t *testing.T) {
 	}
 }
 
+func TestInterruptedAttemptIsRecordedWithoutFailure(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.CreateSession(ctx, Session{ID: "s", Goal: "test", Status: "paused", Concurrency: 1}, []Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.BeginAttempt(ctx, "s", "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.InterruptAttempts(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.InterruptAttempts(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.Events(ctx, "s", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, event := range events {
+		if event.Kind == "inference_interrupted" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("interrupt count %d", count)
+	}
+	recovery, err := s.Recovery(ctx, "a")
+	if err != nil || recovery.Failures != 0 {
+		t.Fatalf("recovery %+v %v", recovery, err)
+	}
+}
+
 func TestPersistence(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "herd.db")

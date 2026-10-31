@@ -96,6 +96,9 @@ func (r *Runner) start(ctx context.Context, id string, resume bool) error {
 	if err != nil {
 		return err
 	}
+	if err = r.store.InterruptAttempts(ctx, id); err != nil {
+		return err
+	}
 	if resume {
 		if err = r.store.SetSessionStatus(ctx, id, "running"); err != nil {
 			return err
@@ -456,6 +459,12 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			if x.paused {
 				r.mu.Unlock()
 				continue
+			}
+			if err := r.store.BeginAttempt(x.ctx, s.ID, a.ID); err != nil {
+				r.storageFailureLocked(s.ID, x, err)
+				r.mu.Unlock()
+				<-x.sem
+				return
 			}
 			activity.State = "inference"
 			activity.QueueMS = time.Since(queued).Milliseconds()

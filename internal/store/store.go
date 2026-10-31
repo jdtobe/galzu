@@ -84,6 +84,9 @@ func Open(path string) (*Store, error) {
 	if err == nil {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS inference_policies(session_id TEXT PRIMARY KEY REFERENCES sessions(id), timeout_ms INTEGER NOT NULL, retry_delays TEXT NOT NULL)`)
 	}
+	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_inflight(agent_id TEXT PRIMARY KEY REFERENCES agents(id), started_at TEXT NOT NULL)`)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -96,6 +99,60 @@ func (s *Store) Close() error { return s.db.Close() }
 func (s *Store) ProbeWrite(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO storage_probe(id,checked_at) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET checked_at=excluded.checked_at`, time.Now().UTC().Format(time.RFC3339Nano))
 	return err
+}
+
+func (s *Store) BeginAttempt(ctx context.Context, sid, aid string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	when := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err = tx.ExecContext(ctx, `INSERT INTO agent_inflight(agent_id,started_at) VALUES(?,?)`, aid, when); err != nil {
+		return err
+	}
+	if err = event(ctx, tx, sid, "inference_started", map[string]string{"agent_id": aid, "started_at": when}); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+func (s *Store) InterruptAttempts(ctx context.Context, sid string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT i.agent_id,i.started_at FROM agent_inflight i JOIN agents a ON a.id=i.agent_id WHERE a.session_id=?`, sid)
+	if err != nil {
+		return err
+	}
+	type attempt struct{ id, started string }
+	var attempts []attempt
+	for rows.Next() {
+		var a attempt
+		if err = rows.Scan(&a.id, &a.started); err != nil {
+			rows.Close()
+			return err
+		}
+		attempts = append(attempts, a)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, a := range attempts {
+		if err = event(ctx, tx, sid, "inference_interrupted", map[string]string{"agent_id": a.id, "started_at": a.started}); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO agent_failures(session_id,agent_id,attempt,category,reason,excerpt,created_at) VALUES(?,?,0,'interrupted','Inference interrupted; no retry consumed','',?)`, sid, a.id, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM agent_inflight WHERE agent_id=?`, a.id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 type Recovery struct {
@@ -163,6 +220,9 @@ func (s *Store) RecordFailure(ctx context.Context, sid, aid, category, reason, e
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO agent_failures(session_id,agent_id,attempt,category,reason,excerpt,created_at) VALUES(?,?,?,?,?,?,?)`, sid, aid, failures, category, reason, excerpt, time.Now().UTC().Format(time.RFC3339Nano))
 	if err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM agent_inflight WHERE agent_id=?`, aid); err != nil {
 		return err
 	}
 	if next.IsZero() {
@@ -291,6 +351,9 @@ func (s *Store) CompleteRest(ctx context.Context, sessionID, agentID string, las
 		return sql.ErrNoRows
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM agent_recovery WHERE agent_id=?`, agentID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM agent_inflight WHERE agent_id=?`, agentID); err != nil {
 		return err
 	}
 	if err = event(ctx, tx, sessionID, "agent_rest", map[string]any{"agent_id": agentID, "checkpoint": last}); err != nil {
@@ -453,6 +516,9 @@ func (s *Store) appendSocialMessage(ctx context.Context, sid, aid, recipient, ki
 			return m, sql.ErrNoRows
 		}
 		if _, err = tx.ExecContext(ctx, `DELETE FROM agent_recovery WHERE agent_id=?`, aid); err != nil {
+			return m, err
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM agent_inflight WHERE agent_id=?`, aid); err != nil {
 			return m, err
 		}
 	}
