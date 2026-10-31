@@ -258,10 +258,15 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			return
 		}
 		var roster strings.Builder
+		activities := r.Activity(s.ID)
 		for _, peer := range agents {
-			fmt.Fprintf(&roster, "\n%s | %s | %s | %s", peer.ID, peer.Name, peer.Role, peer.Status)
+			activity := activities[peer.ID].State
+			if activity == "" {
+				activity = "idle"
+			}
+			fmt.Fprintf(&roster, "\n%s | %s | %s | %s | %s", peer.ID, peer.Name, peer.Role, peer.Status, activity)
 		}
-		prompt := []ollama.Message{{Role: "system", Content: fmt.Sprintf("You are %s (ID %s), a %s in a cooperative herd. Goal: %s. Treat questions honestly, welcome dissent, value correctness over popularity. Roster (ID | name | role | status):%s\nReply only JSON: {\"action\":\"message\",\"text\":\"...\"} for public chat; {\"action\":\"direct\",\"recipient\":\"agent ID\",\"text\":\"...\"} for a private message; {\"action\":\"help\",\"recipient\":\"agent ID or empty\",\"text\":\"...\"} to request help privately or publicly; or {\"action\":\"rest\",\"text\":\"\"}. Only use IDs from the roster. Private messages are visible to the human operator.", a.Name, a.ID, a.Role, s.Goal, roster.String())}}
+		prompt := []ollama.Message{{Role: "system", Content: fmt.Sprintf("You are %s (ID %s), a %s in a cooperative herd. Goal: %s. Treat questions honestly, welcome dissent, value correctness over popularity. Roster (ID | name | role | status | activity):%s\nActivity is an advisory snapshot, not a promise of availability. Reply only JSON: {\"action\":\"message\",\"text\":\"...\"} for public chat; {\"action\":\"direct\",\"recipient\":\"agent ID\",\"text\":\"...\"} for a private message; {\"action\":\"help\",\"recipient\":\"agent ID or empty\",\"text\":\"...\"} to request help privately or publicly; or {\"action\":\"rest\",\"text\":\"\"}. Only use IDs from the roster. Private messages are visible to the human operator.", a.Name, a.ID, a.Role, s.Goal, roster.String())}}
 		for _, m := range all {
 			sender := "Human"
 			for _, peer := range agents {
