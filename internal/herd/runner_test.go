@@ -214,6 +214,12 @@ func TestInvalidActionRetrySeesFeedbackAndNewMessages(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
+	for r.Activity("s")["a"].LastOutcome != "rested" {
+		if time.Now().After(deadline) {
+			t.Fatal("rest outcome not visible")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	history, err := s.Failures(ctx, "s")
 	if err != nil || len(history) != 1 || history[0].Category != "validation" {
 		t.Fatalf("%+v %v", history, err)

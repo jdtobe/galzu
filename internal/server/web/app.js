@@ -46,6 +46,7 @@ async function refresh() {
     const activity = (data.activity || {})[agent.id];
     description.textContent = `${agent.role} · ${agent.status === 'error' ? 'error' : (activity?.state || 'idle')}${agent.error ? ' — ' + agent.error : ''}`;
     if (activity) description.textContent += ` · queue ${activity.queue_ms} ms · inference ${activity.inference_ms} ms · prompt ${activity.prompt_bytes} bytes`;
+    if (activity?.last_outcome) description.textContent += ` · last turn ${activity.last_outcome} at ${activity.completed_at}`;
     const recovery = (data.recoveries || {})[agent.id];
     if (recovery) description.textContent += ` · failed attempts ${recovery.failures} · ${recovery.reason}`;
     const label = document.createElement('label');

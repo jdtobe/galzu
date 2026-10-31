@@ -29,6 +29,8 @@ type Activity struct {
 	QueueMS     int64  `json:"queue_ms"`
 	InferenceMS int64  `json:"inference_ms"`
 	PromptBytes int    `json:"prompt_bytes"`
+	LastOutcome string `json:"last_outcome,omitempty"`
+	CompletedAt string `json:"completed_at,omitempty"`
 }
 
 func (r *Runner) Activity(id string) map[string]Activity {
@@ -580,6 +582,15 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		if err == nil && !checkpointSaved {
 			err = r.store.CompleteRest(context.Background(), s.ID, a.ID, last)
+		}
+		if err == nil {
+			activity.LastOutcome = "rested"
+			if checkpointSaved {
+				activity.LastOutcome = "responded"
+			}
+			activity.CompletedAt = time.Now().UTC().Format(time.RFC3339)
+			r.activity[s.ID][a.ID] = activity
+			r.changed(s.ID)
 		}
 		if err == nil && more {
 			r.notifyLocked(s.ID)
