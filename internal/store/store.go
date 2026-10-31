@@ -223,6 +223,15 @@ func (s *Store) AppendMessageWithThinking(ctx context.Context, sid, aid, body, t
 	return s.AppendSocialMessage(ctx, sid, aid, "", "", body, thinking)
 }
 func (s *Store) AppendSocialMessage(ctx context.Context, sid, aid, recipient, kind, body, thinking string) (Message, error) {
+	return s.appendSocialMessage(ctx, sid, aid, recipient, kind, body, thinking, nil)
+}
+
+// AppendAgentReply commits the reply and its input checkpoint atomically.
+func (s *Store) AppendAgentReply(ctx context.Context, sid, aid, recipient, kind, body, thinking string, checkpoint int64) (Message, error) {
+	return s.appendSocialMessage(ctx, sid, aid, recipient, kind, body, thinking, &checkpoint)
+}
+
+func (s *Store) appendSocialMessage(ctx context.Context, sid, aid, recipient, kind, body, thinking string, checkpoint *int64) (Message, error) {
 	if kind != "" && kind != "direct" && kind != "help" {
 		return Message{}, errors.New("invalid message kind")
 	}
@@ -262,6 +271,19 @@ func (s *Store) AppendSocialMessage(ctx context.Context, sid, aid, recipient, ki
 	}
 	if e = event(ctx, tx, sid, "message", m); e != nil {
 		return m, e
+	}
+	if checkpoint != nil {
+		result, err := tx.ExecContext(ctx, `UPDATE agent_checkpoints SET message_id=MAX(message_id,?) WHERE agent_id=? AND EXISTS (SELECT 1 FROM agents WHERE id=? AND session_id=?)`, *checkpoint, aid, aid, sid)
+		if err != nil {
+			return m, err
+		}
+		count, err := result.RowsAffected()
+		if err != nil {
+			return m, err
+		}
+		if count != 1 {
+			return m, sql.ErrNoRows
+		}
 	}
 	return m, tx.Commit()
 }

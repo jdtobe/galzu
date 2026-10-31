@@ -6,6 +6,40 @@ import (
 	"testing"
 )
 
+func TestAgentReplyAndCheckpointAtomic(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1}, []Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	input, err := s.AppendMessage(ctx, "s", "", "question")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AppendAgentReply(ctx, "s", "missing", "", "", "bad", "", input.ID); err == nil {
+		t.Fatal("missing checkpoint accepted")
+	}
+	messages, err := s.Messages(ctx, "s", 0)
+	if err != nil || len(messages) != 1 {
+		t.Fatalf("rollback: %+v %v", messages, err)
+	}
+	if _, err := s.AppendAgentReply(ctx, "s", "a", "", "", "answer", "", input.ID); err != nil {
+		t.Fatal(err)
+	}
+	checkpoint, err := s.Checkpoint(ctx, "s", "a")
+	if err != nil || checkpoint != input.ID {
+		t.Fatalf("checkpoint %d: %v", checkpoint, err)
+	}
+	messages, err = s.Messages(ctx, "s", 0)
+	if err != nil || len(messages) != 2 || messages[1].Body != "answer" {
+		t.Fatalf("commit: %+v %v", messages, err)
+	}
+}
+
 func TestPersistence(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "herd.db")

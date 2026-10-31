@@ -348,6 +348,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			r.mu.Unlock()
 			return
 		}
+		checkpointSaved := false
 		if reply.Action == "message" || reply.Action == "direct" || reply.Action == "help" {
 			recipient, kind := "", ""
 			if reply.Action == "direct" || reply.Action == "help" {
@@ -360,13 +361,14 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 				}
 			}
 			if valid {
-				_, err = r.store.AppendSocialMessage(context.Background(), s.ID, a.ID, recipient, kind, reply.Text, reply.Thinking)
+				_, err = r.store.AppendAgentReply(context.Background(), s.ID, a.ID, recipient, kind, reply.Text, reply.Thinking, last)
 				if err == nil {
+					checkpointSaved = true
 					r.notifyLocked(s.ID)
 				}
 			}
 		}
-		if err == nil {
+		if err == nil && !checkpointSaved {
 			err = r.store.SetCheckpoint(context.Background(), s.ID, a.ID, last)
 		}
 		r.mu.Unlock()
