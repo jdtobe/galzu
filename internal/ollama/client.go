@@ -16,9 +16,10 @@ type Message struct {
 	Content string `json:"content"`
 }
 type Reply struct {
-	Action   string `json:"action"`
-	Text     string `json:"text"`
-	Thinking string `json:"thinking,omitempty"`
+	Action    string `json:"action"`
+	Text      string `json:"text"`
+	Thinking  string `json:"thinking,omitempty"`
+	Recipient string `json:"recipient,omitempty"`
 }
 type Client struct {
 	base string
@@ -69,10 +70,10 @@ func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []
 	if think {
 		out.Thinking = response.Message.Thinking
 	}
-	if out.Action != "message" && out.Action != "rest" {
+	if out.Action != "message" && out.Action != "rest" && out.Action != "direct" && out.Action != "help" {
 		return out, errors.New("invalid action")
 	}
-	if out.Action == "message" && (strings.TrimSpace(out.Text) == "" || len(out.Text) > 4096) {
+	if out.Action != "rest" && (strings.TrimSpace(out.Text) == "" || len(out.Text) > 4096) {
 		return out, errors.New("invalid message length")
 	}
 	return out, nil

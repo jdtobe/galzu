@@ -56,6 +56,8 @@ async function refresh() {
     const header = document.createElement('div');
     header.className = 'message-header';
     header.textContent = names[message.agent_id] || 'You';
+    if (message.recipient_id) header.textContent += ` → ${names[message.recipient_id] || message.recipient_id} · private`;
+    if (message.kind === 'help') header.textContent += ' · help request';
     item.append(header);
     if (message.thinking) {
       const thought = document.createElement('details');

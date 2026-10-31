@@ -6,9 +6,77 @@ import (
 	"github.com/jdtobe/garth/internal/ollama"
 	"github.com/jdtobe/garth/internal/store"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+type capturePrompts struct{ prompts chan []ollama.Message }
+
+func (f capturePrompts) Chat(_ context.Context, _ string, prompt []ollama.Message) (ollama.Reply, error) {
+	f.prompts <- prompt
+	return ollama.Reply{Action: "rest"}, nil
+}
+
+func TestPrivateMessagesOnlyReachParticipants(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	agents := []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}, {ID: "b", SessionID: "s", Name: "Bea", Role: "helper", Model: "m", Status: "ready"}, {ID: "c", SessionID: "s", Name: "Cy", Role: "helper", Model: "m", Status: "ready"}}
+	if err := s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 3}, agents); err != nil {
+		t.Fatal(err)
+	}
+	f := capturePrompts{make(chan []ollama.Message, 6)}
+	r := New(s, f)
+	defer r.Stop()
+	if err := r.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AppendSocialMessage(ctx, "s", "a", "b", "direct", "secret evidence", ""); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	select {
+	case p := <-f.prompts:
+		if !strings.Contains(p[0].Content, "You are Bea") {
+			t.Fatalf("wrong recipient: %s", p[0].Content)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("recipient not woken")
+	}
+	if _, err := s.AppendMessage(ctx, "s", "", "public update"); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	seen := map[string]bool{}
+	for len(seen) < 3 {
+		select {
+		case p := <-f.prompts:
+			text := ""
+			for _, m := range p {
+				text += m.Content + "\n"
+			}
+			name := ""
+			for _, n := range []string{"Ada", "Bea", "Cy"} {
+				if strings.Contains(p[0].Content, "You are "+n+" ") {
+					name = n
+				}
+			}
+			if name == "" {
+				t.Fatalf("unknown agent: %s", p[0].Content)
+			}
+			if strings.Contains(text, "secret evidence") != (name != "Cy") {
+				t.Fatalf("private content visibility for %s: %s", name, text)
+			}
+			seen[name] = true
+		case <-time.After(time.Second):
+			t.Fatalf("missing prompts: %v", seen)
+		}
+	}
+}
 
 type fake struct {
 	start   chan struct{}

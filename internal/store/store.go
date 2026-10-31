@@ -29,12 +29,14 @@ type Agent struct {
 	Thinking  bool   `json:"thinking"`
 }
 type Message struct {
-	ID        int64     `json:"id"`
-	SessionID string    `json:"session_id"`
-	AgentID   string    `json:"agent_id"`
-	Body      string    `json:"body"`
-	CreatedAt time.Time `json:"created_at"`
-	Thinking  string    `json:"thinking,omitempty"`
+	ID          int64     `json:"id"`
+	SessionID   string    `json:"session_id"`
+	AgentID     string    `json:"agent_id"`
+	Body        string    `json:"body"`
+	CreatedAt   time.Time `json:"created_at"`
+	Thinking    string    `json:"thinking,omitempty"`
+	RecipientID string    `json:"recipient_id,omitempty"`
+	Kind        string    `json:"kind,omitempty"`
 }
 type Event struct {
 	ID        int64           `json:"id"`
@@ -61,6 +63,9 @@ func Open(path string) (*Store, error) {
 	}
 	if err == nil {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_settings(agent_id TEXT PRIMARY KEY REFERENCES agents(id), thinking INTEGER NOT NULL DEFAULT 0); CREATE TABLE IF NOT EXISTS message_thinking(message_id INTEGER PRIMARY KEY REFERENCES messages(id), content TEXT NOT NULL)`)
+	}
+	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS message_routing(message_id INTEGER PRIMARY KEY REFERENCES messages(id), recipient_id TEXT NOT NULL, kind TEXT NOT NULL)`)
 	}
 	if err != nil {
 		db.Close()
@@ -192,13 +197,28 @@ func (s *Store) AppendMessage(ctx context.Context, sid, aid, body string) (Messa
 	return s.AppendMessageWithThinking(ctx, sid, aid, body, "")
 }
 func (s *Store) AppendMessageWithThinking(ctx context.Context, sid, aid, body, thinking string) (Message, error) {
-	m := Message{SessionID: sid, AgentID: aid, Body: body, CreatedAt: time.Now().UTC()}
+	return s.AppendSocialMessage(ctx, sid, aid, "", "", body, thinking)
+}
+func (s *Store) AppendSocialMessage(ctx context.Context, sid, aid, recipient, kind, body, thinking string) (Message, error) {
+	if kind != "" && kind != "direct" && kind != "help" {
+		return Message{}, errors.New("invalid message kind")
+	}
+	if (kind == "direct" && recipient == "") || (kind == "" && recipient != "") {
+		return Message{}, errors.New("invalid recipient")
+	}
+	m := Message{SessionID: sid, AgentID: aid, RecipientID: recipient, Kind: kind, Body: body, CreatedAt: time.Now().UTC()}
 	m.Thinking = thinking
 	tx, e := s.db.BeginTx(ctx, nil)
 	if e != nil {
 		return m, e
 	}
 	defer tx.Rollback()
+	if recipient != "" {
+		var exists int
+		if e = tx.QueryRowContext(ctx, `SELECT 1 FROM agents WHERE id=? AND session_id=?`, recipient, sid).Scan(&exists); e != nil {
+			return m, e
+		}
+	}
 	r, e := tx.ExecContext(ctx, `INSERT INTO messages(session_id,agent_id,body,created_at) VALUES(?,?,?,?)`, sid, aid, body, m.CreatedAt.Format(time.RFC3339Nano))
 	if e != nil {
 		return m, e
@@ -212,13 +232,18 @@ func (s *Store) AppendMessageWithThinking(ctx context.Context, sid, aid, body, t
 			return m, e
 		}
 	}
+	if kind != "" {
+		if _, e = tx.ExecContext(ctx, `INSERT INTO message_routing(message_id,recipient_id,kind) VALUES(?,?,?)`, m.ID, recipient, kind); e != nil {
+			return m, e
+		}
+	}
 	if e = event(ctx, tx, sid, "message", m); e != nil {
 		return m, e
 	}
 	return m, tx.Commit()
 }
 func (s *Store) Messages(ctx context.Context, id string, after int64) ([]Message, error) {
-	rows, e := s.db.QueryContext(ctx, `SELECT m.id,m.session_id,m.agent_id,m.body,m.created_at,COALESCE(t.content,'') FROM messages m LEFT JOIN message_thinking t ON t.message_id=m.id WHERE m.session_id=? AND m.id>? ORDER BY m.id`, id, after)
+	rows, e := s.db.QueryContext(ctx, `SELECT m.id,m.session_id,m.agent_id,m.body,m.created_at,COALESCE(t.content,''),COALESCE(r.recipient_id,''),COALESCE(r.kind,'') FROM messages m LEFT JOIN message_thinking t ON t.message_id=m.id LEFT JOIN message_routing r ON r.message_id=m.id WHERE m.session_id=? AND m.id>? ORDER BY m.id`, id, after)
 	if e != nil {
 		return nil, e
 	}
@@ -227,7 +252,7 @@ func (s *Store) Messages(ctx context.Context, id string, after int64) ([]Message
 	for rows.Next() {
 		var m Message
 		var t string
-		if e = rows.Scan(&m.ID, &m.SessionID, &m.AgentID, &m.Body, &t, &m.Thinking); e != nil {
+		if e = rows.Scan(&m.ID, &m.SessionID, &m.AgentID, &m.Body, &t, &m.Thinking, &m.RecipientID, &m.Kind); e != nil {
 			return nil, e
 		}
 		m.CreatedAt, _ = time.Parse(time.RFC3339Nano, t)

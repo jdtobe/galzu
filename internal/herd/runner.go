@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jdtobe/garth/internal/ollama"
 	"github.com/jdtobe/garth/internal/store"
+	"strings"
 	"sync"
 	"time"
 )
@@ -190,7 +191,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		var trigger bool
 		for _, m := range messages {
-			if m.AgentID != a.ID {
+			if m.AgentID != a.ID && (m.RecipientID == "" || m.RecipientID == a.ID) {
 				trigger = true
 			}
 			last = m.ID
@@ -202,12 +203,41 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		if err != nil {
 			return
 		}
+		visible := all[:0]
+		for _, m := range all {
+			if m.RecipientID == "" || m.RecipientID == a.ID || m.AgentID == a.ID {
+				visible = append(visible, m)
+			}
+		}
+		all = visible
 		if len(all) > 50 {
 			all = all[len(all)-50:]
 		}
-		prompt := []ollama.Message{{Role: "system", Content: fmt.Sprintf("You are %s, a %s in a cooperative herd. Goal: %s. Treat questions honestly, welcome dissent, value correctness over popularity. Offer help, converse, or rest. Reply only JSON: {\"action\":\"message\",\"text\":\"...\"} or {\"action\":\"rest\",\"text\":\"\"}.", a.Name, a.Role, s.Goal)}}
+		_, agents, err := r.store.GetSession(x.ctx, s.ID)
+		if err != nil {
+			return
+		}
+		var roster strings.Builder
+		for _, peer := range agents {
+			fmt.Fprintf(&roster, "\n%s | %s | %s | %s", peer.ID, peer.Name, peer.Role, peer.Status)
+		}
+		prompt := []ollama.Message{{Role: "system", Content: fmt.Sprintf("You are %s (ID %s), a %s in a cooperative herd. Goal: %s. Treat questions honestly, welcome dissent, value correctness over popularity. Roster (ID | name | role | status):%s\nReply only JSON: {\"action\":\"message\",\"text\":\"...\"} for public chat; {\"action\":\"direct\",\"recipient\":\"agent ID\",\"text\":\"...\"} for a private message; {\"action\":\"help\",\"recipient\":\"agent ID or empty\",\"text\":\"...\"} to request help privately or publicly; or {\"action\":\"rest\",\"text\":\"\"}. Only use IDs from the roster. Private messages are visible to the human operator.", a.Name, a.ID, a.Role, s.Goal, roster.String())}}
 		for _, m := range all {
-			prompt = append(prompt, ollama.Message{Role: "user", Content: fmt.Sprintf("%s: %s", m.AgentID, m.Body)})
+			sender := "Human"
+			for _, peer := range agents {
+				if peer.ID == m.AgentID {
+					sender = peer.Name + " (" + peer.ID + ")"
+					break
+				}
+			}
+			label := "public"
+			if m.RecipientID != "" {
+				label = "private to " + m.RecipientID
+			}
+			if m.Kind == "help" {
+				label += " help request"
+			}
+			prompt = append(prompt, ollama.Message{Role: "user", Content: fmt.Sprintf("%s [%s]: %s", sender, label, m.Body)})
 		}
 		activity := Activity{State: "queued"}
 		for _, m := range prompt {
@@ -311,8 +341,22 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			r.mu.Unlock()
 			return
 		}
-		if reply.Action == "message" {
-			_, err = r.store.AppendMessageWithThinking(context.Background(), s.ID, a.ID, reply.Text, reply.Thinking)
+		if reply.Action == "message" || reply.Action == "direct" || reply.Action == "help" {
+			recipient, kind := "", ""
+			if reply.Action == "direct" || reply.Action == "help" {
+				recipient, kind = reply.Recipient, reply.Action
+			}
+			valid := recipient == "" && kind != "direct"
+			for _, peer := range agents {
+				if peer.ID == recipient && peer.ID != a.ID && peer.Status == "ready" {
+					valid = true
+				}
+			}
+			if !valid {
+				r.mu.Unlock()
+				continue
+			}
+			_, err = r.store.AppendSocialMessage(context.Background(), s.ID, a.ID, recipient, kind, reply.Text, reply.Thinking)
 			if err == nil {
 				r.notifyLocked(s.ID)
 			}
