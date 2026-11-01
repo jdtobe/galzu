@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"github.com/jdtobe/galzu/internal/herd"
 	"github.com/jdtobe/galzu/internal/ollama"
 	"github.com/jdtobe/galzu/internal/server"
@@ -47,7 +48,9 @@ func main() {
 		log.Fatal(err)
 	}
 	if !dbSet {
-		migrateLegacy(path)
+		if err := migrateLegacy(path); err != nil {
+			log.Fatal(err)
+		}
 	}
 	warnSynced(path)
 	s, err := store.Open(path)
@@ -68,25 +71,24 @@ func main() {
 // is empty. It copies rather than moves so the old file stays as a backup, and
 // it refuses if a sidecar journal exists: copying the main file alone could lose
 // a transaction.
-func migrateLegacy(path string) {
+func migrateLegacy(path string) error {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		return
+		return nil
 	}
 	const legacy = "galzu.db"
 	if _, err := os.Stat(legacy); err != nil {
-		return
+		return nil
 	}
 	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
 		if _, err := os.Stat(legacy + suffix); err == nil {
-			log.Printf("legacy %s%s exists; not copying it. Stop the old server and move the database to %s.", legacy, suffix, path)
-			return
+			return fmt.Errorf("legacy %s%s exists; stop the old server and move the database to %s (or pass -db with a path outside a synced folder)", legacy, suffix, path)
 		}
 	}
 	if err := copyFile(legacy, path); err != nil {
-		log.Printf("could not copy %s to %s: %v", legacy, path, err)
-		return
+		return fmt.Errorf("could not copy %s to %s: %w", legacy, path, err)
 	}
 	log.Printf("copied legacy database %s to %s; the old file is unchanged", legacy, path)
+	return nil
 }
 
 func copyFile(from, to string) error {
