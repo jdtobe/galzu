@@ -110,3 +110,31 @@ func TestFindingFromAnotherSessionIsNotReachable(t *testing.T) {
 		t.Fatalf("endorse across sessions: %v", err)
 	}
 }
+
+func TestDeletingASessionRemovesItsFindings(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, Session{ID: "s", Goal: "g", Status: "paused", Concurrency: 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	finding, err := s.CreateFinding(ctx, "s", "a", "claim", "evidence", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EndorseFinding(ctx, "s", finding.ID, "b", "agree", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteSession(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"findings", "finding_revisions", "finding_evidence", "finding_positions"} {
+		var count int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("orphaned %s: %d %v", table, count, err)
+		}
+	}
+}
