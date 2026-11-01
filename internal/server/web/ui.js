@@ -8,6 +8,12 @@ const GalzuUI = {
     if (activity.last_outcome === 'rested') return {label:'Resting', tone:''};
     return {label:paused ? 'Paused' : 'Idle', tone:''};
   },
+  // The bulk retry appears only when there is more than one failed agent;
+  // with a single failure the inspector's own control is the right one.
+  retryAllLabel(agents) {
+    const failed = agents.filter(a => a.status === 'error').length;
+    return failed > 1 ? `Retry all failed · ${failed}` : '';
+  },
   visibleMessage(message, filter) {
     if (filter === 'public') return !message.recipient_id;
     if (filter === 'direct') return !!message.recipient_id;

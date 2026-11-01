@@ -893,3 +893,54 @@ func TestPromptCompactsAtBudgetAndStaysAppendOnly(t *testing.T) {
 		t.Fatal("no second turn")
 	}
 }
+
+type restsAtOnce struct{}
+
+func (restsAtOnce) Chat(context.Context, string, []ollama.Message) (ollama.Reply, error) {
+	return ollama.Reply{Action: "rest"}, nil
+}
+
+// One control for a herd that has fallen over: every agent left in error is
+// restarted, and a second press has nothing left to do.
+func TestRetryFailedRestartsEveryErroredAgent(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 2},
+		[]store.Agent{
+			{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"},
+			{ID: "b", SessionID: "s", Name: "Beau", Role: "helper", Model: "m", Status: "ready"},
+		}); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b"} {
+		if err = s.SetAgentStatus(ctx, id, "error", "boom"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := New(s, restsAtOnce{})
+	defer r.Stop()
+
+	retried, err := r.RetryFailed("s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retried != 2 {
+		t.Fatalf("retried %d agents, want 2", retried)
+	}
+	_, agents, err := s.GetSession(ctx, "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range agents {
+		if a.Status != "ready" || a.Error != "" {
+			t.Fatalf("agent %s still %q (%s)", a.Name, a.Status, a.Error)
+		}
+	}
+	if retried, err = r.RetryFailed("s"); err != nil || retried != 0 {
+		t.Fatalf("second retry = %d %v, want 0", retried, err)
+	}
+}

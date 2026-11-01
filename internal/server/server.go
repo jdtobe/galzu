@@ -46,6 +46,7 @@ func New(s *store.Store, r *herd.Runner) http.Handler {
 	m.HandleFunc("POST /api/sessions/{id}/storage/recover", v.recoverStorage)
 	m.HandleFunc("POST /api/sessions/{id}/agents/{agent}/settings", v.agentSettings)
 	m.HandleFunc("POST /api/sessions/{id}/agents/{agent}/retry", v.retryAgent)
+	m.HandleFunc("POST /api/sessions/{id}/agents/retry", v.retryFailedAgents)
 	m.HandleFunc("GET /api/sessions/{id}/events", v.events)
 	m.HandleFunc("GET /api/sessions/{id}/scope", v.getScope)
 	m.HandleFunc("POST /api/sessions/{id}/scope", v.grantScope)
@@ -73,6 +74,17 @@ func (v *server) retryAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, 200, map[string]string{"status": "ready"})
+}
+
+// retryFailedAgents restarts every agent left in error. Agents waiting on an
+// automatic retry are not included; it reports how many it restarted.
+func (v *server) retryFailedAgents(w http.ResponseWriter, r *http.Request) {
+	retried, err := v.r.RetryFailed(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
+	respond(w, 200, map[string]int{"retried": retried})
 }
 func (v *server) agentSettings(w http.ResponseWriter, r *http.Request) {
 	var input struct {

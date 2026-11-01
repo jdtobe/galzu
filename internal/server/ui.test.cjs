@@ -36,3 +36,10 @@ test('cache reuse reports bytes reused, not tokens or elapsed time', () => {
   assert.equal(ui.cacheReuse({prompt_bytes:1200,reused_bytes:0,reuse_percent:0}),'Cold start');
   assert.equal(ui.cacheReuse({prompt_bytes:1200,reused_bytes:900,reuse_percent:75}),'75% · 900 of 1,200 bytes');
 });
+
+test('bulk retry appears only when more than one agent has failed', () => {
+  const ready = {status:'ready'}, failed = {status:'error'};
+  assert.equal(ui.retryAllLabel([ready, ready]), '');
+  assert.equal(ui.retryAllLabel([ready, failed]), '');
+  assert.equal(ui.retryAllLabel([failed, ready, failed]), 'Retry all failed · 2');
+});

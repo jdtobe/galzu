@@ -238,43 +238,78 @@ func (r *Runner) RetryAgent(sessionID, agentID string) error {
 		return err
 	}
 	for _, a := range agents {
-		if a.ID != agentID {
-			continue
+		if a.ID == agentID {
+			return r.retryLocked(sessionID, x, s, a)
 		}
-		if a.Status == "ready" {
-			if r.activity[sessionID][agentID].State != "retrying" {
-				return fmt.Errorf("agent is not waiting to retry")
-			}
-			select {
-			case x.retries[agentID] <- struct{}{}:
-			default:
-			}
-			return nil
-		}
-		if a.Status != "error" {
-			return fmt.Errorf("agent is not in error")
-		}
-		last, err := r.store.Checkpoint(context.Background(), sessionID, agentID)
-		if err != nil {
-			return err
-		}
-		if err = r.store.SetAgentStatus(context.Background(), agentID, "ready", ""); err != nil {
-			return err
-		}
-		if err = r.store.ClearRecovery(context.Background(), agentID); err != nil {
-			return err
-		}
-		a.Status, a.Error = "ready", ""
-		ch := make(chan struct{}, 1)
-		x.wakes[agentID] = ch
-		x.retries[agentID] = make(chan struct{}, 1)
-		go r.worker(x, s, a, last, ch)
-		ch <- struct{}{}
-		r.changed(sessionID)
-		return nil
 	}
 	return fmt.Errorf("agent not found")
 }
+
+// RetryFailed restarts every agent left in error and reports how many it
+// restarted. Agents already waiting on an automatic retry are left to that
+// schedule; the per-agent control is what retries those immediately.
+func (r *Runner) RetryFailed(sessionID string) (int, error) {
+	if err := r.Start(context.Background(), sessionID); err != nil {
+		return 0, err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	x := r.runs[sessionID]
+	if x == nil || r.stopped {
+		return 0, fmt.Errorf("session is not active")
+	}
+	s, agents, err := r.store.GetSession(context.Background(), sessionID)
+	if err != nil {
+		return 0, err
+	}
+	retried := 0
+	for _, a := range agents {
+		if a.Status != "error" {
+			continue
+		}
+		if err := r.retryLocked(sessionID, x, s, a); err != nil {
+			return retried, err
+		}
+		retried++
+	}
+	return retried, nil
+}
+
+// retryLocked does the work for one agent. The caller holds r.mu.
+func (r *Runner) retryLocked(sessionID string, x *run, s store.Session, a store.Agent) error {
+	if a.Status == "ready" {
+		if r.activity[sessionID][a.ID].State != "retrying" {
+			return fmt.Errorf("agent is not waiting to retry")
+		}
+		select {
+		case x.retries[a.ID] <- struct{}{}:
+		default:
+		}
+		return nil
+	}
+	if a.Status != "error" {
+		return fmt.Errorf("agent is not in error")
+	}
+	last, err := r.store.Checkpoint(context.Background(), sessionID, a.ID)
+	if err != nil {
+		return err
+	}
+	if err = r.store.SetAgentStatus(context.Background(), a.ID, "ready", ""); err != nil {
+		return err
+	}
+	if err = r.store.ClearRecovery(context.Background(), a.ID); err != nil {
+		return err
+	}
+	a.Status, a.Error = "ready", ""
+	ch := make(chan struct{}, 1)
+	x.wakes[a.ID] = ch
+	x.retries[a.ID] = make(chan struct{}, 1)
+	go r.worker(x, s, a, last, ch)
+	ch <- struct{}{}
+	r.changed(sessionID)
+	return nil
+}
+
 func (r *Runner) Pause(id string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

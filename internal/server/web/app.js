@@ -210,6 +210,8 @@ function renderRoster() {
   const focused = document.activeElement?.dataset.agent;
   const scroll = $('agents').scrollTop;
   $('agent-count').textContent = currentAgents.length;
+  const bulk = $('retry-failed'), bulkLabel = GalzuUI.retryAllLabel(currentAgents);
+  bulk.textContent = bulkLabel; bulk.hidden = !bulkLabel;
   $('agents').replaceChildren();
   currentAgents.forEach((agent,index) => {
     const li = element('li'), button = element('button','agent-button');
@@ -476,6 +478,16 @@ $('send').onsubmit = async event => {
     if (drafts.get(id)?.body === body) drafts.delete(id);
     if (current === id) { if (form.elements.body.value === body) form.elements.body.value = ''; await refresh(); }
   } catch(error) { report(error); }
+  finally { button.disabled = false; }
+};
+// Retrying every failed agent at once. Agents already waiting on an automatic
+// retry keep that schedule; this restarts the ones that gave up.
+$('retry-failed').onclick = async () => {
+  const button = $('retry-failed');
+  if (!current || button.disabled) return;
+  button.disabled = true;
+  try { await api(`/api/sessions/${encodeURIComponent(current)}/agents/retry`,post({})); await refresh(); }
+  catch(error) { report(error); }
   finally { button.disabled = false; }
 };
 $('pause').onclick = async () => {
