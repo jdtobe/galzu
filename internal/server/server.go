@@ -48,6 +48,7 @@ func New(s *store.Store, r *herd.Runner) http.Handler {
 	m.HandleFunc("POST /api/sessions/{id}/agents/{agent}/retry", v.retryAgent)
 	m.HandleFunc("POST /api/sessions/{id}/agents/retry", v.retryFailedAgents)
 	m.HandleFunc("GET /api/sessions/{id}/events", v.events)
+	m.HandleFunc("GET /api/sessions/{id}/export", v.exportSession)
 	m.HandleFunc("GET /api/sessions/{id}/scope", v.getScope)
 	m.HandleFunc("POST /api/sessions/{id}/scope", v.grantScope)
 	m.HandleFunc("POST /api/sessions/{id}/arm", v.armScope)

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -84,5 +85,52 @@ func TestPlanCompletionFlow(t *testing.T) {
 	last := messages[len(messages)-1]
 	if last.AgentID != "" || last.Body != "Plan v1 marked implemented." {
 		t.Fatalf("announcement = %+v", last)
+	}
+}
+
+func TestExportSessionIsMarkdownWithTheRecord(t *testing.T) {
+	ctx := context.Background()
+	h, s := newScopeServer(t, "s")
+	if _, err := s.AppendMessage(ctx, "s", "", "Ship the smallest thing."); err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := s.OpenProposal(ctx, "s", "a", "vote", "Is this the right increment?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CastBallot(ctx, proposal, "a", "yes", "it is small"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CloseProposal(ctx, proposal, "passed", "1-0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ProposePlanFor(ctx, "s", "a", "1. ship it", proposal); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateFinding(ctx, "s", "a", "Small increments ship.", "The last three did.", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	w := do(t, h, "GET", "/api/sessions/s/export", "")
+	if w.Code != 200 {
+		t.Fatalf("%d: %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/markdown") {
+		t.Fatalf("content type %q", ct)
+	}
+	if cd := w.Header().Get("Content-Disposition"); !strings.Contains(cd, "galzu-s.md") {
+		t.Fatalf("disposition %q", cd)
+	}
+	body := w.Body.String()
+	for _, want := range []string{
+		"# ", "## Agents", "## Plans", "### Plan v1 · pending",
+		"Decision: proposal #1 passed.", "## Questions and ballots",
+		"### Question #1 · passed", "Ada: **yes** — it is small",
+		"## Findings", "### Finding #1", "**support** · Ada: The last three did.",
+		"## Conversation", "**Human**", "Ship the smallest thing.",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %q in:\n%s", want, body)
+		}
 	}
 }

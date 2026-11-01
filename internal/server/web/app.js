@@ -713,6 +713,7 @@ async function openSession(id) {
   $('recipient').replaceChildren(new Option('Everyone',''));
   if (draft?.recipient) { $('recipient').add(new Option(draft.recipient,draft.recipient)); $('recipient').value = draft.recipient; }
   $('rename-result').textContent = ''; $('session-name').dataset.session = '';
+  $('export-session').onclick = () => { window.location.href = `/api/sessions/${encodeURIComponent(id)}/export`; };
   $('session').querySelector('.session-settings').open = false;
   // Clear details from the last session so expansion state cannot cross sessions.
   $('agent-detail').replaceChildren(); $('messages').replaceChildren();
