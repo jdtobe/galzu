@@ -22,6 +22,10 @@ SETS = [
         "halftone.svg", "knit.svg", "string.svg", "barcode.svg", "typewriter.svg"]),
     ("Set 4 · engineering and fluid", [
         "blueprint.svg", "fingerprint.svg", "marble.svg", "papercut.svg", "origami.svg"]),
+    ("Set 5 · the network · who talks to whom", [
+        "one-thread.svg", "hub.svg", "delone.svg", "web.svg", "slack.svg"]),
+    ("Set 5 · the network · how traffic accumulates", [
+        "pins.svg", "directed.svg", "traffic.svg", "radial.svg", "rounds.svg"]),
 ]
 
 
