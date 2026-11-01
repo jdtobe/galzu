@@ -798,6 +798,17 @@ $('clear-session-filters').onclick = () => {
   $('session-query').focus();
 };
 $('new-session').onclick = () => { clearTimeout(librarySearchTimer); leaveSession(); library.hidden = true; $('setup').hidden = false; document.title = 'New session · Galzu'; };
+$('brief-files').onchange = async event => {
+  const input = event.target, brief = $('create').elements.brief;
+  const files = [...input.files]; input.value = '';
+  for (const file of files) {
+    let text;
+    try { text = await file.text(); } catch (error) { report(new Error(`Could not read ${file.name}: ${error.message}`)); continue; }
+    const block = `\n\n--- ${file.name} ---\n${text}`;
+    if (brief.value.length + block.length > 16384) { report(new Error(`Context is limited to 16 KiB; ${file.name} did not fit.`)); break; }
+    brief.value += block;
+  }
+};
 $('recipient').onchange = updateRecipientWarning;
 $('close-inspector').onclick = () => {
   $('session').classList.remove('inspector-open');

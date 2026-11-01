@@ -25,7 +25,10 @@ had one.
 
 ## Shape
 
-- Optional, at most 8192 UTF-8 bytes, whitespace-trimmed.
+- Optional, at most 16384 UTF-8 bytes, whitespace-trimmed.
+- The setup form can append the text of files the operator selects. The browser
+  reads them; the server only receives the resulting brief, so this is not a
+  file-access tool.
 - Supplied at creation and immutable. Changing the world mid-session would
   invalidate every agent's cached prefix and, worse, mean different agents read
   different briefs from the same session.
@@ -58,8 +61,9 @@ and no migration; nothing stores a version per session.
 
 ## What it does not do
 
-- **Not a file dump.** Pasting a README is possible but the budget is 8 KiB and
-  every byte is re-read each turn. It is for orientation, not reference.
+- **Not a file dump.** Pasting a README is possible and the file picker makes it
+  easier, but the budget is 16 KiB and every byte is re-read each turn. It is for
+  orientation and a few key sources, not a repository index.
 - **Not editable.** There is no endpoint to change it. If that is wanted later,
   the honest design is a new session rather than a moving world.
 - **Not the goal.** A brief that says what to do is a goal in the wrong field;

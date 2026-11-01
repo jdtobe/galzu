@@ -180,8 +180,8 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input.Brief = strings.TrimSpace(input.Brief)
-	if len(input.Brief) > 8192 {
-		http.Error(w, "session brief must be at most 8192 UTF-8 bytes", 400)
+	if len(input.Brief) > 16384 {
+		http.Error(w, "session brief must be at most 16384 UTF-8 bytes", 400)
 		return
 	}
 	if input.InferenceTimeoutMS == 0 {

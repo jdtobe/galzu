@@ -354,7 +354,7 @@ func TestSessionBriefIsStoredAndBounded(t *testing.T) {
 		t.Fatalf("brief = %q, err %v", saved.Brief, err)
 	}
 
-	long := strings.Repeat("x", 8193)
+	long := strings.Repeat("x", 16385)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions", bytes.NewBufferString(
 		`{"goal":"test","brief":"`+long+`","concurrency":1,"agents":[{"name":"Ada","role":"leader","model":"m"}]}`)))
