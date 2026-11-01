@@ -114,7 +114,7 @@ func (v *server) exportSession(w http.ResponseWriter, r *http.Request) {
 	if len(findings) > 0 {
 		b.WriteString("## Findings\n\n")
 		for _, finding := range findings {
-			fmt.Fprintf(&b, "### Finding #%d\n\n%s\n\n", finding.ID, finding.Claim)
+			fmt.Fprintf(&b, "### Finding #%d · %s\n\n%s\n\n", finding.ID, finding.Status, finding.Claim)
 			for _, evidence := range finding.Evidence {
 				fmt.Fprintf(&b, "- **%s** · %s: %s\n", evidence.Stance, name(evidence.AuthorID), evidence.Body)
 			}
@@ -129,6 +129,9 @@ func (v *server) exportSession(w http.ResponseWriter, r *http.Request) {
 				}
 				b.WriteString(strings.Join(parts, " · "))
 				b.WriteString("\n\n")
+			}
+			for _, review := range finding.Reviews {
+				fmt.Fprintf(&b, "Review requested from %s: %s (%s)\n\n", name(review.ReviewerID), review.Request, review.Status)
 			}
 			if len(finding.Revisions) > 1 {
 				fmt.Fprintf(&b, "%d revisions; earlier claims are kept in the record.\n\n", len(finding.Revisions)-1)

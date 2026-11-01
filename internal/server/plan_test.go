@@ -126,7 +126,7 @@ func TestExportSessionIsMarkdownWithTheRecord(t *testing.T) {
 		"# ", "## Agents", "## Plans", "### Plan v1 · pending",
 		"Decision: proposal #1 passed.", "## Questions and ballots",
 		"### Question #1 · passed", "Ada: **yes** — it is small",
-		"## Findings", "### Finding #1", "**support** · Ada: The last three did.",
+		"## Findings", "### Finding #1 · open", "**support** · Ada: The last three did.",
 		"## Conversation", "**Human**", "Ship the smallest thing.",
 	} {
 		if !strings.Contains(body, want) {
