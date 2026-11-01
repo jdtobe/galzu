@@ -38,6 +38,7 @@ func New(s *store.Store, r *herd.Runner) http.Handler {
 	m.HandleFunc("GET /api/sessions", v.listSessions)
 	m.HandleFunc("POST /api/sessions/{id}/name", v.renameSession)
 	m.HandleFunc("GET /api/sessions/{id}", v.snapshot)
+	m.HandleFunc("DELETE /api/sessions/{id}", v.deleteSession)
 	m.HandleFunc("POST /api/sessions/{id}/messages", v.message)
 	m.HandleFunc("POST /api/sessions/{id}/pause", v.pause)
 	m.HandleFunc("POST /api/sessions/{id}/resume", v.resume)
@@ -249,6 +250,26 @@ func (v *server) listSessions(w http.ResponseWriter, r *http.Request) {
 	respond(w, 200, map[string]any{"sessions": entries, "more": more})
 }
 
+func (v *server) deleteSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var input struct {
+		ConfirmID string `json:"confirm_id"`
+	}
+	if err := decode(w, r, &input); err != nil || input.ConfirmID != id {
+		http.Error(w, "confirm_id must match the session ID", 400)
+		return
+	}
+	if err := v.r.DeleteSession(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrSessionNotPaused) {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		failure(w, err)
+		return
+	}
+	respond(w, 200, map[string]string{"deleted": id})
+}
+
 func (v *server) renameSession(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name string `json:"name"`
@@ -388,6 +409,11 @@ func (v *server) events(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ch:
+			if _, _, err := v.s.GetSession(r.Context(), sid); errors.Is(err, sql.ErrNoRows) {
+				fmt.Fprint(w, "event: deleted\ndata: {}\n\n")
+				f.Flush()
+				return
+			}
 			fmt.Fprint(w, "event: update\ndata: {}\n\n")
 			f.Flush()
 		case <-ticker.C:

@@ -132,3 +132,40 @@ func TestSessionSearchAPI(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteSessionAPIRequiresConfirmationAndPause(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+	for _, tc := range []struct {
+		body string
+		code int
+	}{
+		{`{}`, 400}, {`{"confirm_id":"wrong"}`, 400}, {`{"confirm_id":"s"}`, 409},
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("DELETE", "/api/sessions/s", strings.NewReader(tc.body)))
+		if w.Code != tc.code {
+			t.Fatalf("%d: %s", w.Code, w.Body.String())
+		}
+	}
+	if err := s.SetSessionStatus(ctx, "s", "paused"); err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range []int{200, 404} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("DELETE", "/api/sessions/s", strings.NewReader(`{"confirm_id":"s"}`)))
+		if w.Code != code {
+			t.Fatalf("%d: %s", w.Code, w.Body.String())
+		}
+	}
+}

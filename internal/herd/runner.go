@@ -44,6 +44,10 @@ func (r *Runner) Activity(id string) map[string]Activity {
 }
 func (r *Runner) setActivity(session, agent string, activity Activity) {
 	r.mu.Lock()
+	if r.runs[session] == nil {
+		r.mu.Unlock()
+		return
+	}
 	if r.activity[session] == nil {
 		r.activity[session] = make(map[string]Activity)
 	}
@@ -185,6 +189,27 @@ func (r *Runner) RecoverStorage(id string) error {
 	return r.Start(context.Background(), id)
 }
 func (r *Runner) Resume(id string) error { return r.start(context.Background(), id, true) }
+
+func (r *Runner) DeleteSession(ctx context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	x := r.runs[id]
+	if x != nil && !x.paused {
+		return store.ErrSessionNotPaused
+	}
+	// Keep workers intact if the transaction fails. The lock also excludes resume
+	// and reply commits until deletion has either committed or rolled back.
+	if err := r.store.DeleteSession(ctx, id); err != nil {
+		return err
+	}
+	if x != nil {
+		x.cancel()
+	}
+	delete(r.runs, id)
+	delete(r.activity, id)
+	r.changed(id)
+	return nil
+}
 
 // RetryAgent restarts a failed worker from its last committed checkpoint.
 func (r *Runner) RetryAgent(sessionID, agentID string) error {

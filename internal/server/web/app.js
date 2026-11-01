@@ -3,6 +3,7 @@ let refreshSequence = 0, navigationSequence = 0, librarySequence = 0, libraryPag
 let currentAgents = [], selectedAgent = '', messageFilter = 'all', messageSignature = '';
 let seenLastMessage = 0;
 let librarySearchTimer;
+let armedDeletion = '';
 const $ = id => document.getElementById(id);
 const drafts = new Map(), pendingControls = new Set();
 const library = $('library');
@@ -44,6 +45,7 @@ async function checkStorage() {
   $('storage-recover').hidden = !state.error;
 }
 function leaveSession() {
+  disarmDeletion();
   ++navigationSequence;
   if (current) drafts.set(current, {body:$('send').elements.body.value, recipient:$('recipient').value});
   if (stream) stream.close();
@@ -59,6 +61,7 @@ async function showLibrary() {
   await refreshLibrary();
 }
 async function refreshLibrary() {
+  disarmDeletion();
   clearTimeout(librarySearchTimer);
   const sequence = ++librarySequence;
   const search = $('session-query').value.trim(), filterStatus = $('session-status').value;
@@ -98,11 +101,50 @@ async function refreshLibrary() {
       open.disabled = true;
       try { await openSession(entry.id); } catch(error) { report(error); } finally { open.disabled = false; }
     };
-    card.append(top,title,goal,meta,open); list.append(card);
+    const actions = element('div','card-actions'), remove = element('button','delete-session');
+    const question = element('span','delete-question','?'); question.setAttribute('aria-hidden','true');
+    const icon = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    for (const [name,value] of Object.entries({viewBox:'0 0 20 20',width:'18',height:'18',fill:'none',stroke:'currentColor','stroke-width':'1.7','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true'})) icon.setAttribute(name,value);
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d','M4 6 H16 M8 3.5 H12 L13 6 M6 6 L7 16.5 H13 L14 6 M9 9 V14 M11 9 V14');
+    icon.append(path); remove.append(question,icon);
+    remove.dataset.session = entry.id;
+    remove.type = 'button'; remove.disabled = entry.status !== 'paused';
+    remove.title = remove.disabled ? 'Pause this session before deleting it' : 'Permanently delete this session and its history';
+    remove.setAttribute('aria-label',`Delete session ${entry.name || entry.goal.slice(0,80)}${remove.disabled ? ' (pause first)' : ''}`);
+    const warning = element('p','delete-warning','Click the trash can again to permanently delete this run, including private messages, memory, and all history. No undo.');
+    warning.hidden = true; warning.setAttribute('role','status');
+    remove.onclick = async event => {
+      // A double-click must not turn the initial arm action into deletion.
+      if (event?.detail > 1) return;
+      if (armedDeletion !== entry.id) {
+        disarmDeletion(); armedDeletion = entry.id;
+        remove.classList.add('armed'); warning.hidden = false;
+        remove.setAttribute('aria-label',`Confirm permanent deletion of session ${entry.name || entry.goal.slice(0,80)}`);
+        remove.title = 'Click again to permanently delete. Click elsewhere or press Escape to cancel.';
+        return;
+      }
+      remove.disabled = true; open.disabled = true;
+      try {
+        await api(`/api/sessions/${encodeURIComponent(entry.id)}`,{...post({confirm_id:entry.id}),method:'DELETE'});
+        drafts.delete(entry.id); libraryPage = 0; await refreshLibrary();
+      } catch(error) { report(error); disarmDeletion(); remove.disabled = false; open.disabled = false; }
+    };
+    actions.append(open,remove); card.append(top,title,goal,meta,actions,warning); list.append(card);
   }
   $('sessions-page').textContent = `Page ${libraryPage + 1}`;
   $('sessions-previous').disabled = libraryPage === 0;
   $('sessions-next').disabled = !result.more;
+}
+function disarmDeletion() {
+  armedDeletion = '';
+  document.querySelectorAll('.delete-session.armed').forEach(button=>{
+    button.classList.remove('armed');
+    const name = button.closest('.session-card').querySelector('h3').textContent;
+    button.setAttribute('aria-label',`Delete session ${name}`);
+    button.title = 'Permanently delete this session and its history';
+  });
+  document.querySelectorAll('.delete-warning').forEach(warning=>{ warning.hidden = true; });
 }
 function setLibraryBusy() {
   $('session-list').setAttribute('aria-busy','true');
@@ -362,6 +404,9 @@ async function openSession(id) {
   if (stream) stream.close();
   stream = new EventSource(`/api/sessions/${encodeURIComponent(id)}/events`);
   stream.addEventListener('update',()=>{ if (current === id) refresh().catch(report); });
+  stream.addEventListener('deleted',()=>{
+    if (current === id) { const pending = showLibrary(); drafts.delete(id); pending.catch(report); }
+  });
   stream.onopen = ()=>{ if (current === id) refresh().catch(report); };
 }
 
@@ -384,7 +429,14 @@ $('close-inspector').onclick = () => {
   $('session').classList.remove('inspector-open');
   [...$('agents').querySelectorAll('button')].find(b=>b.dataset.agent === selectedAgent)?.focus();
 };
-document.addEventListener('keydown',event=>{ if (event.key === 'Escape' && $('session').classList.contains('inspector-open')) $('close-inspector').click(); });
+document.addEventListener('keydown',event=>{
+  if (event.key === 'Escape') {
+    disarmDeletion();
+    if ($('session').classList.contains('inspector-open')) $('close-inspector').click();
+  }
+});
+document.addEventListener('click',event=>{ if (!event.target.closest?.('.delete-session')) disarmDeletion(); });
+document.addEventListener('focusin',event=>{ if (!event.target.closest?.('.delete-session')) disarmDeletion(); });
 document.querySelectorAll('[data-filter]').forEach(button=>{
   button.onclick = () => {
     messageFilter = button.dataset.filter;
