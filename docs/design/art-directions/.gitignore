@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# preview/ is generated: white-backed SVGs are committed for viewing, the PNG
+# exports beside them are not.
+preview/*.png
