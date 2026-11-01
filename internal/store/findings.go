@@ -202,6 +202,11 @@ ON CONFLICT(finding_id,agent_id) DO UPDATE SET choice=excluded.choice,text=exclu
 	return err
 }
 
+// Finding returns one finding in a session.
+func (s *Store) Finding(ctx context.Context, sessionID string, id int64) (Finding, error) {
+	return s.finding(ctx, sessionID, id)
+}
+
 // Findings returns findings oldest-first. A positive limit returns the most
 // recent ones, still oldest-first, so a prompt window cannot starve new claims.
 func (s *Store) Findings(ctx context.Context, sessionID string, limit int) ([]Finding, error) {

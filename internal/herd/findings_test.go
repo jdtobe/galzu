@@ -162,3 +162,23 @@ func TestRetractWithdrawsWithoutDeleting(t *testing.T) {
 		t.Fatal("withdrew twice")
 	}
 }
+
+func TestOnlyTheAuthorOrLeaderCanWithdraw(t *testing.T) {
+	ctx := context.Background()
+	s, session, agents := findingHerd(t)
+	r := New(s, restsAtOnce{})
+	defer r.Stop()
+
+	if _, err := r.handleFinding(session, agents[1], ollama.Reply{Action: "finding", Text: "Beau's claim"}, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	findings, _ := s.Findings(ctx, "s", 0)
+	// Cy is a helper and did not write it.
+	cy := store.Agent{ID: "c", SessionID: "s", Name: "Cy", Role: "helper", Model: "m", Status: "ready"}
+	if _, err := r.handleRetract(session, cy, ollama.Reply{Action: "retract", Finding: findings[0].ID, Text: "no"}, 0, nil); err == nil {
+		t.Fatal("a helper withdrew another agent's finding")
+	}
+	if _, err := r.handleRetract(session, agents[0], ollama.Reply{Action: "retract", Finding: findings[0].ID, Text: "leader decision"}, 0, nil); err != nil {
+		t.Fatalf("leader could not withdraw: %v", err)
+	}
+}

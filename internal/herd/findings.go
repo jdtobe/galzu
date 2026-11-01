@@ -88,7 +88,17 @@ func (r *Runner) handleRetract(s store.Session, a store.Agent, reply ollama.Repl
 	if len(reason) > 2048 {
 		return false, &ollama.ValidationError{Reason: "a retraction reason must be at most 2048 bytes"}
 	}
-	err := r.store.RetractFinding(context.Background(), s.ID, reply.Finding)
+	finding, err := r.store.Finding(context.Background(), s.ID, reply.Finding)
+	if errors.Is(err, store.ErrFindingGone) {
+		return false, &ollama.ValidationError{Reason: fmt.Sprintf("finding #%d does not exist in this session", reply.Finding)}
+	}
+	if err != nil {
+		return false, err
+	}
+	if finding.AuthorID != a.ID && a.Role != "leader" {
+		return false, &ollama.ValidationError{Reason: "only the author or the leader may withdraw a finding"}
+	}
+	err = r.store.RetractFinding(context.Background(), s.ID, reply.Finding)
 	switch {
 	case errors.Is(err, store.ErrFindingGone):
 		return false, &ollama.ValidationError{Reason: fmt.Sprintf("finding #%d does not exist in this session", reply.Finding)}
