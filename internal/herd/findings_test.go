@@ -134,3 +134,31 @@ func TestPlanReferenceMustBeAPassedProposal(t *testing.T) {
 		t.Fatalf("current = %+v ok %v err %v", current, ok, err)
 	}
 }
+
+func TestRetractWithdrawsWithoutDeleting(t *testing.T) {
+	ctx := context.Background()
+	s, session, agents := findingHerd(t)
+	r := New(s, restsAtOnce{})
+	defer r.Stop()
+
+	if _, err := r.handleFinding(session, agents[0], ollama.Reply{Action: "finding", Text: "A wrong claim", Evidence: "a misreading"}, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	findings, _ := s.Findings(ctx, "s", 0)
+	saved, err := r.handleRetract(session, agents[0], ollama.Reply{Action: "retract", Finding: findings[0].ID, Text: "the evidence did not survive review"}, 0, nil)
+	if err != nil || !saved {
+		t.Fatalf("saved %v err %v", saved, err)
+	}
+	findings, _ = s.Findings(ctx, "s", 0)
+	if findings[0].Status != "withdrawn" || len(findings[0].Evidence) != 1 {
+		t.Fatalf("finding = %+v", findings[0])
+	}
+	messages, _ := s.Messages(ctx, "s", 0)
+	last := messages[len(messages)-1]
+	if last.Kind != "retract" || !strings.Contains(last.Body, "withdrawn") {
+		t.Fatalf("message = %+v", last)
+	}
+	if _, err := r.handleRetract(session, agents[0], ollama.Reply{Action: "retract", Finding: findings[0].ID, Text: "again"}, 0, nil); err == nil {
+		t.Fatal("withdrew twice")
+	}
+}

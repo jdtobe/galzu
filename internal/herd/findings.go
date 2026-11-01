@@ -78,6 +78,33 @@ func cleanClaim(text string) string {
 	return strings.TrimSpace(findingPrefix.ReplaceAllString(strings.TrimSpace(text), ""))
 }
 
+// handleRetract withdraws a claim and says why in the conversation. Nothing is
+// deleted: the claim, its evidence and its positions remain in the record.
+func (r *Runner) handleRetract(s store.Session, a store.Agent, reply ollama.Reply, last int64, memory *string) (bool, error) {
+	if reply.Finding <= 0 {
+		return false, &ollama.ValidationError{Reason: "a retraction needs the finding id"}
+	}
+	reason := strings.TrimSpace(reply.Text)
+	if len(reason) > 2048 {
+		return false, &ollama.ValidationError{Reason: "a retraction reason must be at most 2048 bytes"}
+	}
+	err := r.store.RetractFinding(context.Background(), s.ID, reply.Finding)
+	switch {
+	case errors.Is(err, store.ErrFindingGone):
+		return false, &ollama.ValidationError{Reason: fmt.Sprintf("finding #%d does not exist in this session", reply.Finding)}
+	case errors.Is(err, store.ErrFindingWithdrawn):
+		return false, &ollama.ValidationError{Reason: fmt.Sprintf("finding #%d is already withdrawn", reply.Finding)}
+	case err != nil:
+		return false, err
+	}
+	body := fmt.Sprintf("Finding #%d withdrawn: %s", reply.Finding, reason)
+	if _, err := r.store.AppendAgentReplyWithMemory(context.Background(), s.ID, a.ID, "", "retract", body, reply.Thinking, last, memory); err != nil {
+		return false, err
+	}
+	r.notifyLocked(s.ID)
+	return true, nil
+}
+
 // handleEndorse records agreement or disagreement. The latest position wins;
 // earlier ones are not preserved, because a position is not evidence.
 func (r *Runner) handleEndorse(s store.Session, a store.Agent, reply ollama.Reply, last int64, memory *string) (bool, error) {

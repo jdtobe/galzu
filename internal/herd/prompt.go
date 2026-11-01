@@ -14,7 +14,7 @@ import (
 // preamble and the epoch header, and it is the only record that the layout
 // changed. Nothing stores a version per session, so a bump costs one cold prompt
 // per agent and no migration.
-const promptProtocol = 5
+const promptProtocol = 6
 
 // Prompt budgets in UTF-8 bytes of rendered entries. Compaction happens rarely
 // and drops well past the high-water mark so the prefix survives many turns.
@@ -166,6 +166,7 @@ Reply with exactly one JSON object and nothing else:
 {"action":"available","text":"..."} say you have capacity and want work
 {"action":"finding","text":"claim","evidence":"...","stance":"support"} publish or revise a finding
 {"action":"endorse","finding":<id>,"choice":"agree" or "disagree","text":"..."} record agreement, not verification
+{"action":"retract","finding":<id>,"text":"why"} withdraw a claim without erasing it
 {"action":"plan","text":"...","proposal":<id>} propose steps, done, acceptance; proposal is optional and must have passed
 {"action":"rest","text":""} stay quiet
 Add "memory": a JSON string with your updated private working memory, at most 2048 UTF-8 bytes. Preserve evidence sources, uncertainty, disagreement, and unanswered questions; distinguish claims from observations.
@@ -186,7 +187,7 @@ func entryLine(m store.Message, viewer string) string {
 	if m.Kind == "help" {
 		kind += " help-request"
 	}
-	if m.Kind == "finding" || m.Kind == "endorse" {
+	if m.Kind == "finding" || m.Kind == "endorse" || m.Kind == "retract" {
 		kind += " " + m.Kind
 	}
 	if m.RecipientID != "" && m.RecipientID != viewer && m.AgentID != viewer {
@@ -275,7 +276,11 @@ func turnPacket(in promptInput) string {
 					mine = position.Choice
 				}
 			}
-			fmt.Fprintf(&b, "\n%d | %s | %d-%d | %s", finding.ID, truncate(finding.Claim, 240), agree, disagree, mine)
+			status := ""
+			if finding.Status == "withdrawn" {
+				status = " [withdrawn]"
+			}
+			fmt.Fprintf(&b, "\n%d | %s | %d-%d | %s%s", finding.ID, truncate(finding.Claim, 240), agree, disagree, mine, status)
 			for i, evidence := range finding.Evidence {
 				if i >= 4 {
 					break
@@ -288,11 +293,14 @@ func turnPacket(in promptInput) string {
 			}
 		}
 		b.WriteString("\nAgreement is not verification. Challenge with evidence, revise with the finding action, and endorse with a reason.")
-		positions := 0
+		openFindings, positions := 0, 0
 		for _, finding := range in.Findings {
-			positions += len(finding.Positions)
+			if finding.Status != "withdrawn" {
+				openFindings++
+				positions += len(finding.Positions)
+			}
 		}
-		if positions == 0 {
+		if openFindings > 0 && positions == 0 {
 			b.WriteString("\nNo finding has a position yet. If you have evidence, endorse or challenge one.")
 		}
 	}

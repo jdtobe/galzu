@@ -52,6 +52,7 @@ type FindingPosition struct {
 }
 
 var ErrFindingGone = errors.New("finding does not exist in this session")
+var ErrFindingWithdrawn = errors.New("finding is already withdrawn")
 
 func findingsSchema(db *sql.DB) error {
 	_, err := db.Exec(`
@@ -155,6 +156,34 @@ func (s *Store) ReviseFinding(ctx context.Context, sessionID string, findingID i
 		return Finding{}, err
 	}
 	return s.finding(ctx, sessionID, findingID)
+}
+
+// RetractFinding withdraws a claim without erasing it. Evidence and positions
+// stay in the record, because a withdrawn claim is history worth keeping.
+func (s *Store) RetractFinding(ctx context.Context, sessionID string, findingID int64) error {
+	result, err := s.db.ExecContext(ctx, `UPDATE findings SET status='withdrawn',updated_at=? WHERE id=? AND session_id=? AND status='open'`,
+		time.Now().UTC().Format(time.RFC3339Nano), findingID, sessionID)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 1 {
+		return nil
+	}
+	var status string
+	if err := s.db.QueryRowContext(ctx, `SELECT status FROM findings WHERE id=? AND session_id=?`, findingID, sessionID).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrFindingGone
+		}
+		return err
+	}
+	if status == "withdrawn" {
+		return ErrFindingWithdrawn
+	}
+	return ErrFindingGone
 }
 
 // EndorseFinding records or replaces one agent's position. It is a position, not

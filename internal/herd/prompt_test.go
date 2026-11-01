@@ -201,3 +201,15 @@ func TestFindingsWithNoPositionsInviteAPosition(t *testing.T) {
 		t.Fatalf("nudge persisted with a position:\n%s", text)
 	}
 }
+
+func TestWithdrawnFindingIsMarkedAndDoesNotInvitePositions(t *testing.T) {
+	session, me, peers := fixture()
+	findings := []store.Finding{{ID: 2, Claim: "A wrong claim", Status: "withdrawn"}}
+	text := promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Findings: findings}).Tail())
+	if !strings.Contains(text, "[withdrawn]") {
+		t.Fatalf("withdrawal not marked:\n%s", text)
+	}
+	if strings.Contains(text, "No finding has a position yet.") {
+		t.Fatalf("withdrawn finding invited a position:\n%s", text)
+	}
+}

@@ -731,6 +731,9 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		if err == nil && reply.Action == "endorse" {
 			checkpointSaved, err = r.handleEndorse(s, a, reply, last, updatedMemory)
 		}
+		if err == nil && reply.Action == "retract" {
+			checkpointSaved, err = r.handleRetract(s, a, reply, last, updatedMemory)
+		}
 		if err == nil && !checkpointSaved {
 			err = r.store.CompleteRestWithMemory(context.Background(), s.ID, a.ID, last, updatedMemory)
 		}

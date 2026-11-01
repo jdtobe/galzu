@@ -138,3 +138,38 @@ func TestDeletingASessionRemovesItsFindings(t *testing.T) {
 		}
 	}
 }
+
+func TestRetractionKeepsTheRecord(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, Session{ID: "s", Goal: "g", Status: "running", Concurrency: 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	finding, err := s.CreateFinding(ctx, "s", "a", "a claim", "evidence", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EndorseFinding(ctx, "s", finding.ID, "b", "agree", "still think so"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RetractFinding(ctx, "s", finding.ID); err != nil {
+		t.Fatal(err)
+	}
+	findings, err := s.Findings(ctx, "s", 0)
+	if err != nil || len(findings) != 1 {
+		t.Fatalf("%+v %v", findings, err)
+	}
+	if findings[0].Status != "withdrawn" || len(findings[0].Evidence) != 1 || len(findings[0].Positions) != 1 {
+		t.Fatalf("record was erased: %+v", findings[0])
+	}
+	if err := s.RetractFinding(ctx, "s", finding.ID); !errors.Is(err, ErrFindingWithdrawn) {
+		t.Fatalf("second retraction: %v", err)
+	}
+	if err := s.RetractFinding(ctx, "other", finding.ID); !errors.Is(err, ErrFindingGone) {
+		t.Fatalf("cross-session retraction: %v", err)
+	}
+}

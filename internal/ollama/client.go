@@ -109,8 +109,11 @@ func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []
 	}
 	if out.Action != "message" && out.Action != "rest" && out.Action != "direct" && out.Action != "help" &&
 		out.Action != "propose" && out.Action != "vote" && out.Action != "plan" && out.Action != "available" &&
-		out.Action != "finding" && out.Action != "endorse" {
-		return out, invalid("unknown action; use message, direct, help, available, propose, vote, plan, finding, endorse, or rest", response.Message.Content)
+		out.Action != "finding" && out.Action != "endorse" && out.Action != "retract" {
+		return out, invalid("unknown action; use message, direct, help, available, propose, vote, plan, finding, endorse, retract, or rest", response.Message.Content)
+	}
+	if out.Action == "retract" && out.Finding <= 0 {
+		return out, invalid("a retraction needs the finding id", response.Message.Content)
 	}
 	if out.Action == "endorse" {
 		if out.Finding <= 0 {

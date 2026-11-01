@@ -238,6 +238,7 @@ async function renderFindings(sid) {
     heading.append(element('strong','',`#${finding.id}`), element('span','muted',names.get(finding.author_id) || finding.author_id));
     const agree = (finding.positions || []).filter(p => p.choice === 'agree').length;
     const disagree = (finding.positions || []).filter(p => p.choice === 'disagree').length;
+    if (finding.status === 'withdrawn') heading.append(element('span','decision-status','withdrawn'));
     heading.append(element('span','finding-tally',`${agree} agree · ${disagree} disagree`));
     item.append(heading, element('p','finding-claim',finding.claim));
     for (const evidence of finding.evidence || []) {
