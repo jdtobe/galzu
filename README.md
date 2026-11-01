@@ -1,6 +1,16 @@
-# Herd social prototype
+# Galzu
 
-A local, social-only proof of concept for an agent herd. It does not provide external HTTP/TCP agent tools or perform NAS assessment.
+**Pre-alpha — a single-operator application for running a herd of local models.**
+
+It is not safe to expose: there is no authentication, and it is designed for one
+person on one machine. Agents can talk, help, propose and vote, but they cannot
+reach the network on their own behalf — the tool gate and its policy exist, and
+no agent action reaches them yet. Do not run it against a host you are not
+authorised to assess.
+
+Why it exists: to find out whether a small group of models working together is
+more useful than asking one model. That question is still open; most of what is
+here is the infrastructure that makes asking it possible.
 
 Start Ollama separately, install a model that supports the required JSON responses, and run:
 

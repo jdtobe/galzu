@@ -356,3 +356,47 @@ func TestLeaderCannotMoveNoConfidenceInItself(t *testing.T) {
 		t.Fatalf("err = %v, want a validation error", err)
 	}
 }
+
+type planner struct {
+	done chan struct{}
+	once sync.Once
+}
+
+func (p *planner) Chat(context.Context, string, []ollama.Message) (ollama.Reply, error) {
+	p.once.Do(func() { close(p.done) })
+	return ollama.Reply{Action: "plan", Text: "1. Read the README\nDone when: summary written\nAcceptance: quotes the goal"}, nil
+}
+
+func TestAgentCanProposeAPlan(t *testing.T) {
+	ctx := context.Background()
+	s := openHerd(t, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}, 1)
+	model := &planner{done: make(chan struct{})}
+	r := New(s, model)
+	defer r.Stop()
+	if err := r.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AppendMessage(ctx, "s", "", "begin"); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	select {
+	case <-model.done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("model was never called")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		plan, ok, err := s.CurrentPlan(ctx, "s")
+		if err == nil && ok && plan.Status == "pending" {
+			if plan.Version != 1 {
+				t.Fatalf("version = %d", plan.Version)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no plan recorded")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}

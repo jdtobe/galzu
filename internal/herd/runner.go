@@ -461,6 +461,11 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		entries := afterCut(all, cut)
 		render := func() prompt {
+			plan, hasPlan, _ := r.store.CurrentPlan(x.ctx, s.ID)
+			var current *store.Plan
+			if hasPlan {
+				current = &plan
+			}
 			proposals, _ := r.store.OpenProposals(x.ctx, s.ID)
 			ballots := make(map[int64][]store.Ballot, len(proposals))
 			for _, proposal := range proposals {
@@ -479,6 +484,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 				Recovery:  recovery,
 				Proposals: proposals,
 				Ballots:   ballots,
+				Plan:      current,
 			})
 		}
 		rendered := render()
@@ -690,6 +696,9 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		if err == nil && (reply.Action == "propose" || reply.Action == "vote") {
 			checkpointSaved, err = r.handleGovernance(s, a, agents, reply, last, updatedMemory)
+		}
+		if err == nil && reply.Action == "plan" {
+			checkpointSaved, err = r.handlePlan(s, a, reply, last, updatedMemory)
 		}
 		if err == nil && !checkpointSaved {
 			err = r.store.CompleteRestWithMemory(context.Background(), s.ID, a.ID, last, updatedMemory)

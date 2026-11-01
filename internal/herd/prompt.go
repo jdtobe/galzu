@@ -39,6 +39,7 @@ type promptInput struct {
 	// only reach the tail.
 	Proposals []store.Proposal
 	Ballots   map[int64][]store.Ballot
+	Plan      *store.Plan
 }
 
 // prompt separates the append-only prefix from the rebuilt turn packet.
@@ -153,6 +154,7 @@ Reply with exactly one JSON object and nothing else:
 {"action":"propose","text":"..."} put a yes/no question to the herd
 {"action":"propose","kind":"confidence","text":"..."} move no confidence in the leader
 {"action":"vote","proposal":<id>,"choice":"yes" or "no","text":"..."} vote, with your reason
+{"action":"plan","text":"..."} propose the steps, definition of done, and acceptance criteria
 {"action":"rest","text":""} stay quiet
 Add "memory": a JSON string with your updated private working memory, at most 2048 UTF-8 bytes. Preserve evidence sources, uncertainty, disagreement, and unanswered questions; distinguish claims from observations.
 `, promptProtocol, s.ID, s.Goal)
@@ -234,6 +236,14 @@ func turnPacket(in promptInput) string {
 		if hasElection(in.Proposals) {
 			b.WriteString("\nIn an election, name a candidate agent id as your choice.")
 		}
+	}
+	switch {
+	case in.Plan == nil:
+		b.WriteString("\nPlan: none. Propose one with the plan action: steps, definition of done, acceptance criteria.")
+	case in.Plan.Status == "approved":
+		fmt.Fprintf(&b, "\nPlan (approved v%d): %s", in.Plan.Version, in.Plan.Body)
+	default:
+		fmt.Fprintf(&b, "\nPlan: pending review (v%d). Not agreed yet; do not treat it as authoritative.\n%s", in.Plan.Version, in.Plan.Body)
 	}
 	switch in.Recovery.Category {
 	case "validation":
