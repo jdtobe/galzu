@@ -192,12 +192,12 @@ func TestFindingsWithNoPositionsInviteAPosition(t *testing.T) {
 	session, me, peers := fixture()
 	findings := []store.Finding{{ID: 1, Claim: "A claim"}}
 	text := promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Findings: findings}).Tail())
-	if !strings.Contains(text, "No finding has a position yet.") {
+	if !strings.Contains(text, "No finding has been reviewed by another agent yet.") {
 		t.Fatalf("missing nudge:\n%s", text)
 	}
 	findings[0].Positions = []store.FindingPosition{{AgentID: "a2", Choice: "agree"}}
 	text = promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Findings: findings}).Tail())
-	if strings.Contains(text, "No finding has a position yet.") {
+	if strings.Contains(text, "No finding has been reviewed by another agent yet.") {
 		t.Fatalf("nudge persisted with a position:\n%s", text)
 	}
 }
@@ -209,7 +209,24 @@ func TestWithdrawnFindingIsMarkedAndDoesNotInvitePositions(t *testing.T) {
 	if !strings.Contains(text, "[withdrawn]") {
 		t.Fatalf("withdrawal not marked:\n%s", text)
 	}
-	if strings.Contains(text, "No finding has a position yet.") {
+	if strings.Contains(text, "No finding has been reviewed by another agent yet.") {
 		t.Fatalf("withdrawn finding invited a position:\n%s", text)
+	}
+}
+
+func TestAuthorEndorsementIsNotAPeerReview(t *testing.T) {
+	session, me, peers := fixture()
+	findings := []store.Finding{{
+		ID: 1, Claim: "A claim", AuthorID: "a1",
+		Positions: []store.FindingPosition{{AgentID: "a1", Choice: "agree"}},
+	}}
+	text := promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Findings: findings}).Tail())
+	if !strings.Contains(text, "No finding has been reviewed by another agent yet.") {
+		t.Fatalf("self-endorsement counted as review:\n%s", text)
+	}
+	findings[0].Positions = append(findings[0].Positions, store.FindingPosition{AgentID: "a2", Choice: "disagree"})
+	text = promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Findings: findings}).Tail())
+	if strings.Contains(text, "No finding has been reviewed") {
+		t.Fatalf("peer review did not clear the nudge:\n%s", text)
 	}
 }

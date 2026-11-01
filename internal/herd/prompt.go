@@ -293,15 +293,21 @@ func turnPacket(in promptInput) string {
 			}
 		}
 		b.WriteString("\nAgreement is not verification. Challenge with evidence, revise with the finding action, and endorse with a reason.")
-		openFindings, positions := 0, 0
+		openFindings, reviews := 0, 0
 		for _, finding := range in.Findings {
-			if finding.Status != "withdrawn" {
-				openFindings++
-				positions += len(finding.Positions)
+			if finding.Status == "withdrawn" {
+				continue
+			}
+			openFindings++
+			for _, position := range finding.Positions {
+				if position.AgentID != finding.AuthorID {
+					reviews++
+					break
+				}
 			}
 		}
-		if openFindings > 0 && positions == 0 {
-			b.WriteString("\nNo finding has a position yet. If you have evidence, endorse or challenge one.")
+		if openFindings > 0 && reviews == 0 {
+			b.WriteString("\nNo finding has been reviewed by another agent yet. If you have evidence, endorse or challenge one.")
 		}
 	}
 	switch {
