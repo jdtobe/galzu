@@ -142,3 +142,27 @@ func TestEmptyBriefLeavesNoStrayLine(t *testing.T) {
 		t.Fatalf("preamble layout changed:\n%s", text)
 	}
 }
+
+func TestFindingsAppearWithTallyAndOwnPosition(t *testing.T) {
+	session, me, peers := fixture()
+	findings := []store.Finding{{
+		ID: 4, Claim: "Renaming does not invalidate the prefix.",
+		Evidence: []store.FindingEvidence{
+			{AuthorID: "a1", Stance: "support", Body: "The name only reaches the turn packet."},
+			{AuthorID: "a2", Stance: "oppose", Body: "I saw a miss after a rename."},
+		},
+		Positions: []store.FindingPosition{{AgentID: "a1", Choice: "agree"}, {AgentID: "a2", Choice: "disagree"}},
+	}}
+	text := promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Findings: findings}).Tail())
+	for _, want := range []string{
+		"Findings (id | claim | agree-disagree | your position):",
+		"4 | Renaming does not invalidate the prefix. | 1-1 | agree",
+		"support Ada: The name only reaches the turn packet.",
+		"oppose Bea: I saw a miss after a rename.",
+		"Agreement is not verification.",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in:\n%s", want, text)
+		}
+	}
+}

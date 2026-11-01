@@ -3,6 +3,7 @@ let refreshSequence = 0, navigationSequence = 0, librarySequence = 0, libraryPag
 let currentAgents = [], selectedAgent = '', messageFilter = 'all', messageSignature = '';
 let decisionsSignature = '', decisionsSequence = 0, planDecisionBusy = false;
 let scopeSignature = '', scopeSequence = 0;
+let findingsSignature = '', findingsSequence = 0;
 let seenLastMessage = 0;
 let librarySearchTimer;
 let armedDeletion = '';
@@ -210,6 +211,49 @@ async function refresh() {
   renderMessages();
   renderDecisions(id).catch(report);
   renderScope(id).catch(report);
+  renderFindings(id).catch(report);
+}
+
+// renderFindings shows claims, evidence and agreement. Agreement is displayed,
+// never interpreted: there is no verified state to render.
+async function renderFindings(sid) {
+  const sequence = ++findingsSequence;
+  const data = await api(`/api/sessions/${encodeURIComponent(sid)}/findings`);
+  if (sid !== current || sequence !== findingsSequence) return;
+  const signature = JSON.stringify(data.findings || []);
+  if (signature === findingsSignature) return;
+  findingsSignature = signature;
+  const findings = data.findings || [];
+  $('findings-count').textContent = findings.length ? `${findings.length}` : 'none';
+  const body = $('findings-body');
+  body.replaceChildren();
+  if (!findings.length) {
+    body.append(element('p','muted','No findings yet. An agent can publish a claim with the finding action, and the herd can support, challenge, revise or endorse it without erasing history.'));
+    return;
+  }
+  const names = new Map(currentAgents.map(agent => [agent.id, agent.name]));
+  for (const finding of findings.slice().reverse()) {
+    const item = element('article','finding');
+    const heading = element('div','finding-heading');
+    heading.append(element('strong','',`#${finding.id}`), element('span','muted',names.get(finding.author_id) || finding.author_id));
+    const agree = (finding.positions || []).filter(p => p.choice === 'agree').length;
+    const disagree = (finding.positions || []).filter(p => p.choice === 'disagree').length;
+    heading.append(element('span','finding-tally',`${agree} agree · ${disagree} disagree`));
+    item.append(heading, element('p','finding-claim',finding.claim));
+    for (const evidence of finding.evidence || []) {
+      const row = element('p',`finding-evidence ${evidence.stance}`);
+      row.append(element('strong','',`${evidence.stance} · ${names.get(evidence.author_id) || evidence.author_id}`), document.createTextNode(` ${evidence.body}`));
+      item.append(row);
+    }
+    for (const position of finding.positions || []) {
+      item.append(element('p','finding-position',`${names.get(position.agent_id) || position.agent_id}: ${position.choice}${position.text ? ` — ${position.text}` : ''}`));
+    }
+    if ((finding.revisions || []).length > 1) {
+      item.append(element('p','muted',`${finding.revisions.length - 1} ${finding.revisions.length === 2 ? 'revision' : 'revisions'} kept in history`));
+    }
+    body.append(item);
+  }
+  body.append(element('p','muted','Agreement is not verification. A tally shows positions, not truth.'));
 }
 
 // renderScope is the human side of the tool gate: grant a scope, arm it with a
@@ -647,7 +691,7 @@ async function openSession(id) {
   const navigation = ++navigationSequence;
   await api(`/api/sessions/${encodeURIComponent(id)}`);
   if (navigation !== navigationSequence) return;
-  leaveSession(); current = id; selectedAgent = ''; messageSignature = ''; decisionsSignature = ''; seenLastMessage = 0;
+  leaveSession(); current = id; selectedAgent = ''; messageSignature = ''; decisionsSignature = ''; findingsSignature = ''; seenLastMessage = 0;
   const draft = drafts.get(id);
   $('send').elements.body.value = draft?.body || '';
   $('recipient').replaceChildren(new Option('Everyone',''));

@@ -213,6 +213,16 @@ summary { cursor: pointer; }
 .scope-audit p { margin: 5px 0; overflow-wrap: anywhere; }
 .scope-audit time { color: var(--color-muted); }
 @media (max-width: 900px) { .scope-entry { grid-template-columns: 1fr 1fr; } }
+#findings-body { font-size: 11px; }
+.finding { border-top: 1px solid var(--color-border); padding: 9px 0; }
+.finding:first-child { border-top: 0; padding-top: 2px; }
+.finding-heading { display: flex; gap: 8px; align-items: baseline; }
+.finding-tally { margin-left: auto; color: var(--color-muted); white-space: nowrap; }
+.finding-claim { margin: 5px 0; font-weight: 600; overflow-wrap: anywhere; }
+.finding-evidence { margin: 3px 0 0 10px; color: var(--color-muted); overflow-wrap: anywhere; }
+.finding-evidence.support strong { color: var(--color-primary); }
+.finding-evidence.oppose strong { color: var(--color-error); }
+.finding-position { margin: 2px 0 0 10px; overflow-wrap: anywhere; }
 .decisions { margin: 0 28px 14px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); font-size: 12px; flex-shrink: 0; }
 .decisions > summary { cursor: pointer; padding: 10px 13px; font-weight: 600; color: var(--color-text); }
 #decisions-body { max-height: 42vh; overflow: auto; padding: 0 13px 13px; }

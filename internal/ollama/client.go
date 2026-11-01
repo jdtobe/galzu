@@ -20,8 +20,11 @@ type Reply struct {
 	Thinking  string  `json:"thinking,omitempty"`
 	Recipient string  `json:"recipient,omitempty"`
 	Proposal  int64   `json:"proposal,omitempty"`
+	Finding   int64   `json:"finding,omitempty"`
 	Choice    string  `json:"choice,omitempty"`
 	Kind      string  `json:"kind,omitempty"`
+	Evidence  string  `json:"evidence,omitempty"`
+	Stance    string  `json:"stance,omitempty"`
 	Memory    *string `json:"memory,omitempty"`
 	// Server-side accounting. prompt_eval_count is the whole prompt, not just
 	// cache misses, so the duration is what reveals a cache hit.
@@ -105,8 +108,20 @@ func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []
 		out.Thinking = response.Message.Thinking
 	}
 	if out.Action != "message" && out.Action != "rest" && out.Action != "direct" && out.Action != "help" &&
-		out.Action != "propose" && out.Action != "vote" && out.Action != "plan" && out.Action != "available" {
-		return out, invalid("unknown action; use message, direct, help, available, propose, vote, plan, or rest", response.Message.Content)
+		out.Action != "propose" && out.Action != "vote" && out.Action != "plan" && out.Action != "available" &&
+		out.Action != "finding" && out.Action != "endorse" {
+		return out, invalid("unknown action; use message, direct, help, available, propose, vote, plan, finding, endorse, or rest", response.Message.Content)
+	}
+	if out.Action == "endorse" {
+		if out.Finding <= 0 {
+			return out, invalid("endorsements need the finding id", response.Message.Content)
+		}
+		if out.Choice != "agree" && out.Choice != "disagree" {
+			return out, invalid(`endorsements need a choice of "agree" or "disagree"`, response.Message.Content)
+		}
+	}
+	if out.Action == "finding" && len(out.Evidence) > 4096 {
+		return out, invalid("finding evidence exceeds 4096 bytes", response.Message.Content)
 	}
 	if out.Action == "vote" {
 		if out.Proposal <= 0 {

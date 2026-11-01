@@ -362,3 +362,45 @@ func TestSessionBriefIsStoredAndBounded(t *testing.T) {
 		t.Fatalf("oversized brief accepted: %d", w.Code)
 	}
 }
+
+func TestFindingsEndpointListsClaims(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions", bytes.NewBufferString(`{"goal":"test","concurrency":1,"agents":[{"name":"Ada","role":"leader","model":"m"}]}`)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("%d: %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		Session store.Session `json:"session"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateFinding(ctx, created.Session.ID, "a", "A claim", "because", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/sessions/"+created.Session.ID+"/findings", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("%d: %s", w.Code, w.Body.String())
+	}
+	var result struct {
+		Findings []store.Finding `json:"findings"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Findings) != 1 || result.Findings[0].Claim != "A claim" || len(result.Findings[0].Evidence) != 1 {
+		t.Fatalf("findings = %+v", result.Findings)
+	}
+}

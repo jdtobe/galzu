@@ -40,6 +40,7 @@ type promptInput struct {
 	Proposals []store.Proposal
 	Ballots   map[int64][]store.Ballot
 	Plan      *store.Plan
+	Findings  []store.Finding
 }
 
 // prompt separates the append-only prefix from the rebuilt turn packet.
@@ -163,6 +164,8 @@ Reply with exactly one JSON object and nothing else:
 {"action":"propose","kind":"confidence","text":"..."} move no confidence in the leader
 {"action":"vote","proposal":<id>,"choice":"yes" or "no","text":"..."} vote, with your reason
 {"action":"available","text":"..."} say you have capacity and want work
+{"action":"finding","text":"claim","evidence":"...","stance":"support"} publish or revise a finding
+{"action":"endorse","finding":<id>,"choice":"agree" or "disagree","text":"..."} record agreement, not verification
 {"action":"plan","text":"..."} propose the steps, definition of done, and acceptance criteria
 {"action":"rest","text":""} stay quiet
 Add "memory": a JSON string with your updated private working memory, at most 2048 UTF-8 bytes. Preserve evidence sources, uncertainty, disagreement, and unanswered questions; distinguish claims from observations.
@@ -182,6 +185,9 @@ func entryLine(m store.Message, viewer string) string {
 	}
 	if m.Kind == "help" {
 		kind += " help-request"
+	}
+	if m.Kind == "finding" || m.Kind == "endorse" {
+		kind += " " + m.Kind
 	}
 	if m.RecipientID != "" && m.RecipientID != viewer && m.AgentID != viewer {
 		return fmt.Sprintf("%d %s %s (content is private)", m.ID, sender, kind)
@@ -246,6 +252,40 @@ func turnPacket(in promptInput) string {
 			b.WriteString("\nIn an election, name a candidate agent id as your choice.")
 		}
 	}
+	if len(in.Findings) > 0 {
+		names := map[string]string{}
+		for _, peer := range in.Agents {
+			names[peer.ID] = peer.Name
+		}
+		b.WriteString("\nFindings (id | claim | agree-disagree | your position):")
+		for _, finding := range in.Findings {
+			agree, disagree := 0, 0
+			mine := "none"
+			for _, position := range finding.Positions {
+				switch position.Choice {
+				case "agree":
+					agree++
+				case "disagree":
+					disagree++
+				}
+				if position.AgentID == in.Agent.ID {
+					mine = position.Choice
+				}
+			}
+			fmt.Fprintf(&b, "\n%d | %s | %d-%d | %s", finding.ID, truncate(finding.Claim, 240), agree, disagree, mine)
+			for i, evidence := range finding.Evidence {
+				if i >= 4 {
+					break
+				}
+				name := names[evidence.AuthorID]
+				if name == "" {
+					name = evidence.AuthorID
+				}
+				fmt.Fprintf(&b, "\n  %s %s: %s", evidence.Stance, name, truncate(evidence.Body, 240))
+			}
+		}
+		b.WriteString("\nAgreement is not verification. Challenge with evidence, revise with the finding action, and endorse with a reason.")
+	}
 	switch {
 	case in.Plan == nil:
 		b.WriteString("\nPlan: none. Propose one with the plan action: steps, definition of done, acceptance criteria.")
@@ -262,6 +302,21 @@ func turnPacket(in promptInput) string {
 	}
 	b.WriteString("\nReply with one JSON object.")
 	return b.String()
+}
+
+// truncate keeps a prompt line bounded without cutting a UTF-8 sequence.
+func truncate(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	if limit < 1 {
+		return ""
+	}
+	cut := limit
+	for cut > 0 && (text[cut]&0xC0) == 0x80 {
+		cut--
+	}
+	return text[:cut] + "…"
 }
 
 // promptReuse is the byte prefix shared with the agent's previous prompt. It is
