@@ -1,0 +1,35 @@
+Garth provisional avatar
+------------------------
+Avataaars artwork by Pablo Stanley, assembled using DiceBear 9.x.
+Style license: Free for personal and commercial use.
+Original source: https://avataaars.com/
+Style documentation and licensing: https://www.dicebear.com/styles/avataaars/
+
+This is a generic long-haired, glasses-wearing avatar, not official Wayne's World
+artwork or a claim of affiliation. The downloaded SVG retains its source metadata.
+It is served locally; no avatar API is contacted by the application.
+
+Source configuration:
+https://api.dicebear.com/9.x/avataaars/svg?seed=Garth&top=straight01&hairColor=d6b370&accessories=prescription02&accessoriesColor=243630&accessoriesProbability=100&facialHairProbability=0&eyes=default&eyebrows=defaultNatural&mouth=twinkle&clothing=shirtCrewNeck&clothesColor=243630&skinColor=ffdbb4&scale=110
+
+Sessions icon
+-------------
+Lucide "folders", displayed at 1.7px stroke width.
+Source: https://lucide.dev/icons/folders
+SVG source: https://github.com/lucide-icons/lucide/blob/main/icons/folders.svg
+
+ISC License
+
+Copyright (c) 2026 Lucide Icons and Contributors
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

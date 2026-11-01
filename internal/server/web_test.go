@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/xml"
+	"io"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -27,6 +29,7 @@ func TestConversationWorkspaceAssets(t *testing.T) {
 		{"/style.css", []string{".session-workspace", ".inspector", "@media (max-width: 700px)"}},
 		{"/ui.js", []string{"agentState", "visibleMessage", "deliveryState"}},
 		{"/app.js", []string{"renderAgentDetail", "renderMessages", "refreshLibrary"}},
+		{"/garth-mark.svg", []string{"<svg", "Pablo Stanley"}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -40,5 +43,38 @@ func TestConversationWorkspaceAssets(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBrandArtworkIsSelfContained(t *testing.T) {
+	data, err := web.ReadFile("web/garth-mark.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder := xml.NewDecoder(strings.NewReader(string(data)))
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		switch start.Name.Local {
+		case "script", "foreignObject", "image":
+			t.Fatalf("unexpected active or external content: %s", start.Name.Local)
+		}
+		for _, attribute := range start.Attr {
+			if strings.HasPrefix(strings.ToLower(attribute.Name.Local), "on") {
+				t.Fatalf("unexpected event handler: %s", attribute.Name.Local)
+			}
+			if attribute.Name.Local == "href" && !strings.HasPrefix(attribute.Value, "#") {
+				t.Fatalf("external resource: %s", attribute.Value)
+			}
+		}
 	}
 }
