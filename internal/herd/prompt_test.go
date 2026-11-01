@@ -178,3 +178,12 @@ func TestDonePlanIsHistoricalNotPendingWork(t *testing.T) {
 		t.Fatalf("done plan looks pending:\n%s", text)
 	}
 }
+
+func TestPlanShowsTheDecisionItImplements(t *testing.T) {
+	session, me, peers := fixture()
+	plan := &store.Plan{Version: 2, Status: "approved", Body: "1. ship", ProposalID: 7}
+	text := promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Plan: plan}).Tail())
+	if !strings.Contains(text, "Decision: proposal #7 passed.") {
+		t.Fatalf("missing decision provenance:\n%s", text)
+	}
+}

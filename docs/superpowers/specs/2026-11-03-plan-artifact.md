@@ -69,3 +69,22 @@ before an action can be dispatched. That check is specified in
 - Requiring a plan before *conversation* continues — the design says planning is
   not a tool-free phase, and gating talk on approval would make the herd useless
   while waiting.
+
+
+## Decision provenance
+
+A plan may name the passed proposal it implements:
+
+```json
+{"action":"plan","text":"...","proposal":6}
+```
+
+The harness refuses a plan that references an open or failed proposal, and keeps
+the reference on every version. It is provenance, not authority: the vote says
+the herd chose a direction, and the human still approves the plan. Plans without
+a reference are allowed, because a solo session and a first increment have
+nothing to cite.
+
+This exists because the first briefed run produced a plan for a candidate its own
+leader had argued against; the plan won by being proposed last, not by winning a
+decision. Recording the reference makes that gap visible instead of silent.

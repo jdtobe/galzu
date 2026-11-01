@@ -448,6 +448,7 @@ async function renderDecisions(sid) {
   if (plan) {
     const section = element('section','decision plan-decision');
     section.append(element('h3','',`Plan v${plan.version}`), element('span',`decision-status ${plan.status}`,plan.status));
+    if (plan.proposal_id) section.append(element('span','message-label',`decision #${plan.proposal_id}`));
     section.append(element('pre','plan-body',plan.body));
     if (plan.note) section.append(element('p','decision-note',`Note: ${plan.note}`));
     if (plan.status === 'approved') {

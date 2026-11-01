@@ -2,6 +2,7 @@ package herd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jdtobe/galzu/internal/ollama"
@@ -14,7 +15,19 @@ func (r *Runner) handlePlan(s store.Session, a store.Agent, reply ollama.Reply, 
 	if len(reply.Text) > store.MaxPlanBytes {
 		return false, &ollama.ValidationError{Reason: "plan exceeds the size limit; be concise"}
 	}
-	plan, err := r.store.ProposePlan(context.Background(), s.ID, a.ID, reply.Text)
+	if reply.Proposal > 0 {
+		proposal, err := r.store.Proposal(context.Background(), s.ID, reply.Proposal)
+		if errors.Is(err, store.ErrProposalGone) {
+			return false, &ollama.ValidationError{Reason: fmt.Sprintf("proposal #%d does not exist in this session", reply.Proposal)}
+		}
+		if err != nil {
+			return false, err
+		}
+		if proposal.Status != "passed" {
+			return false, &ollama.ValidationError{Reason: "a plan may reference only a passed proposal; vote first"}
+		}
+	}
+	plan, err := r.store.ProposePlanFor(context.Background(), s.ID, a.ID, reply.Text, reply.Proposal)
 	if err != nil {
 		return false, err
 	}

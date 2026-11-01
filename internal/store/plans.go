@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -13,15 +14,18 @@ import (
 //
 // Spec: docs/superpowers/specs/2026-11-03-plan-artifact.md
 type Plan struct {
-	ID        int64     `json:"id"`
-	SessionID string    `json:"session_id"`
-	Version   int       `json:"version"`
-	Body      string    `json:"body"`
-	AuthorID  string    `json:"author_id"`
-	Status    string    `json:"status"` // pending, approved, rejected, superseded
-	Note      string    `json:"note"`
-	CreatedAt time.Time `json:"created_at"`
-	DecidedAt time.Time `json:"decided_at,omitempty"`
+	ID        int64  `json:"id"`
+	SessionID string `json:"session_id"`
+	Version   int    `json:"version"`
+	Body      string `json:"body"`
+	AuthorID  string `json:"author_id"`
+	// ProposalID, when set, is the passed vote this plan implements. It is
+	// provenance, not authority: the human still approves the plan.
+	ProposalID int64     `json:"proposal_id,omitempty"`
+	Status     string    `json:"status"` // pending, approved, rejected, superseded, done
+	Note       string    `json:"note"`
+	CreatedAt  time.Time `json:"created_at"`
+	DecidedAt  time.Time `json:"decided_at,omitempty"`
 }
 
 var ErrPlanNotPending = errors.New("plan is not pending review")
@@ -35,15 +39,28 @@ CREATE TABLE IF NOT EXISTS plans(
   id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, version INTEGER NOT NULL,
   body TEXT NOT NULL, author_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
   note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, decided_at TEXT NOT NULL DEFAULT '',
-  decided_by TEXT NOT NULL DEFAULT '');
+  decided_by TEXT NOT NULL DEFAULT '', proposal_id INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS plans_session ON plans(session_id, version);`)
-	return err
+	if err != nil {
+		return err
+	}
+	if _, err := db.Exec(`ALTER TABLE plans ADD COLUMN proposal_id INTEGER NOT NULL DEFAULT 0`); err != nil {
+		if !strings.Contains(err.Error(), "duplicate column") {
+			return err
+		}
+	}
+	return nil
 }
 
 // ProposePlan records a new version and supersedes any plan still awaiting
 // review. Only one plan can be pending: a queue of competing plans is how a
 // herd stalls.
 func (s *Store) ProposePlan(ctx context.Context, sessionID, authorID, body string) (Plan, error) {
+	return s.ProposePlanFor(ctx, sessionID, authorID, body, 0)
+}
+
+// ProposePlanFor records a version with an optional passed-proposal reference.
+func (s *Store) ProposePlanFor(ctx context.Context, sessionID, authorID, body string, proposalID int64) (Plan, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Plan{}, err
@@ -58,14 +75,14 @@ func (s *Store) ProposePlan(ctx context.Context, sessionID, authorID, body strin
 		return Plan{}, err
 	}
 	now := time.Now().UTC()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO plans(session_id,version,body,author_id,created_at) VALUES(?,?,?,?,?)`,
-		sessionID, version, body, authorID, now.Format(time.RFC3339Nano)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO plans(session_id,version,body,author_id,created_at,proposal_id) VALUES(?,?,?,?,?,?)`,
+		sessionID, version, body, authorID, now.Format(time.RFC3339Nano), proposalID); err != nil {
 		return Plan{}, err
 	}
 	if err := tx.Commit(); err != nil {
 		return Plan{}, err
 	}
-	return Plan{SessionID: sessionID, Version: version, Body: body, AuthorID: authorID, Status: "pending", CreatedAt: now}, nil
+	return Plan{SessionID: sessionID, Version: version, Body: body, AuthorID: authorID, ProposalID: proposalID, Status: "pending", CreatedAt: now}, nil
 }
 
 // DecidePlan approves or rejects a pending version, with the human's note.
@@ -126,9 +143,9 @@ func (s *Store) CurrentPlan(ctx context.Context, sessionID string) (Plan, bool, 
 func (s *Store) planWithStatus(ctx context.Context, sessionID, status string) (Plan, error) {
 	var p Plan
 	var created, decided string
-	err := s.db.QueryRowContext(ctx, `SELECT id,session_id,version,body,author_id,status,note,created_at,decided_at
+	err := s.db.QueryRowContext(ctx, `SELECT id,session_id,version,body,author_id,proposal_id,status,note,created_at,decided_at
 FROM plans WHERE session_id=? AND status=? ORDER BY version DESC LIMIT 1`, sessionID, status).
-		Scan(&p.ID, &p.SessionID, &p.Version, &p.Body, &p.AuthorID, &p.Status, &p.Note, &created, &decided)
+		Scan(&p.ID, &p.SessionID, &p.Version, &p.Body, &p.AuthorID, &p.ProposalID, &p.Status, &p.Note, &created, &decided)
 	if err != nil {
 		return Plan{}, err
 	}
@@ -141,7 +158,7 @@ FROM plans WHERE session_id=? AND status=? ORDER BY version DESC LIMIT 1`, sessi
 
 // Plans lists every version, oldest first.
 func (s *Store) Plans(ctx context.Context, sessionID string) ([]Plan, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,session_id,version,body,author_id,status,note,created_at,decided_at
+	rows, err := s.db.QueryContext(ctx, `SELECT id,session_id,version,body,author_id,proposal_id,status,note,created_at,decided_at
 FROM plans WHERE session_id=? ORDER BY version`, sessionID)
 	if err != nil {
 		return nil, err
@@ -151,7 +168,7 @@ FROM plans WHERE session_id=? ORDER BY version`, sessionID)
 	for rows.Next() {
 		var p Plan
 		var created, decided string
-		if err := rows.Scan(&p.ID, &p.SessionID, &p.Version, &p.Body, &p.AuthorID, &p.Status, &p.Note, &created, &decided); err != nil {
+		if err := rows.Scan(&p.ID, &p.SessionID, &p.Version, &p.Body, &p.AuthorID, &p.ProposalID, &p.Status, &p.Note, &created, &decided); err != nil {
 			return nil, err
 		}
 		p.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)

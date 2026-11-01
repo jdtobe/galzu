@@ -109,3 +109,28 @@ func TestEchoedFindingHeadingIsRemovedFromTheClaim(t *testing.T) {
 		t.Fatalf("removed a meaningful prefix: %q", got)
 	}
 }
+
+func TestPlanReferenceMustBeAPassedProposal(t *testing.T) {
+	ctx := context.Background()
+	s, session, agents := findingHerd(t)
+	r := New(s, restsAtOnce{})
+	defer r.Stop()
+
+	open, err := s.OpenProposal(ctx, "s", "a", "vote", "Ship it?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.handlePlan(session, agents[0], ollama.Reply{Action: "plan", Text: "steps", Proposal: open}, 0, nil); err == nil {
+		t.Fatal("plan accepted an open proposal")
+	}
+	if err := s.CloseProposal(ctx, open, "passed", "1-0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.handlePlan(session, agents[0], ollama.Reply{Action: "plan", Text: "steps", Proposal: open}, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	current, ok, err := s.CurrentPlan(ctx, "s")
+	if err != nil || !ok || current.ProposalID != open {
+		t.Fatalf("current = %+v ok %v err %v", current, ok, err)
+	}
+}

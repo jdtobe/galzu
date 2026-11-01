@@ -33,6 +33,7 @@ type Ballot struct {
 }
 
 var ErrProposalClosed = errors.New("proposal is not open")
+var ErrProposalGone = errors.New("proposal does not exist in this session")
 
 func governanceSchema(db *sql.DB) error {
 	_, err := db.Exec(`
@@ -129,6 +130,23 @@ func scanProposals(rows *sql.Rows) ([]Proposal, error) {
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// Proposal returns one question in a session.
+func (s *Store) Proposal(ctx context.Context, sessionID string, id int64) (Proposal, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,session_id,body,author_id,kind,status,result,created_at,closed_at FROM proposals WHERE session_id=? AND id=?`, sessionID, id)
+	if err != nil {
+		return Proposal{}, err
+	}
+	defer rows.Close()
+	out, err := scanProposals(rows)
+	if err != nil {
+		return Proposal{}, err
+	}
+	if len(out) != 1 {
+		return Proposal{}, ErrProposalGone
+	}
+	return out[0], nil
 }
 
 // Ballots returns the current ballot per agent for one proposal.

@@ -104,3 +104,24 @@ func TestCompletePlanClosesTheLoop(t *testing.T) {
 		t.Fatalf("current = %+v ok %v err %v", current, ok, err)
 	}
 }
+
+func TestPlanCanReferenceAPassedProposal(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	id, err := s.OpenProposal(ctx, "s", "a", "vote", "Ship it?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := s.ProposePlanFor(ctx, "s", "a", "v1 body", id)
+	if err != nil || plan.ProposalID != id {
+		t.Fatalf("%+v %v", plan, err)
+	}
+	versions, err := s.Plans(ctx, "s")
+	if err != nil || len(versions) != 1 || versions[0].ProposalID != id {
+		t.Fatalf("versions = %+v err %v", versions, err)
+	}
+	current, _, err := s.CurrentPlan(ctx, "s")
+	if err != nil || current.ProposalID != id {
+		t.Fatalf("current = %+v err %v", current, err)
+	}
+}

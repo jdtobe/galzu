@@ -14,7 +14,7 @@ import (
 // preamble and the epoch header, and it is the only record that the layout
 // changed. Nothing stores a version per session, so a bump costs one cold prompt
 // per agent and no migration.
-const promptProtocol = 4
+const promptProtocol = 5
 
 // Prompt budgets in UTF-8 bytes of rendered entries. Compaction happens rarely
 // and drops well past the high-water mark so the prefix survives many turns.
@@ -166,7 +166,7 @@ Reply with exactly one JSON object and nothing else:
 {"action":"available","text":"..."} say you have capacity and want work
 {"action":"finding","text":"claim","evidence":"...","stance":"support"} publish or revise a finding
 {"action":"endorse","finding":<id>,"choice":"agree" or "disagree","text":"..."} record agreement, not verification
-{"action":"plan","text":"..."} propose the steps, definition of done, and acceptance criteria
+{"action":"plan","text":"...","proposal":<id>} propose steps, done, acceptance; proposal is optional and must have passed
 {"action":"rest","text":""} stay quiet
 Add "memory": a JSON string with your updated private working memory, at most 2048 UTF-8 bytes. Preserve evidence sources, uncertainty, disagreement, and unanswered questions; distinguish claims from observations.
 `, promptProtocol, s.ID, s.Goal, brief)
@@ -295,6 +295,9 @@ func turnPacket(in promptInput) string {
 		fmt.Fprintf(&b, "\nPlan (approved v%d, the working plan): %s\nDo not propose a replacement unless the human asks for one or you have found a specific defect. If you do propose one, say what changed and why.", in.Plan.Version, in.Plan.Body)
 	default:
 		fmt.Fprintf(&b, "\nPlan: pending review (v%d). Not agreed yet; do not treat it as authoritative, and do not propose another while this one waits.\n%s", in.Plan.Version, in.Plan.Body)
+	}
+	if in.Plan != nil && in.Plan.ProposalID > 0 {
+		fmt.Fprintf(&b, "\nDecision: proposal #%d passed.", in.Plan.ProposalID)
 	}
 	switch in.Recovery.Category {
 	case "validation":
