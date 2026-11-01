@@ -812,7 +812,7 @@ $('clear-session-filters').onclick = () => {
   $('session-query').value = ''; $('session-status').value = ''; filterLibrary();
   $('session-query').focus();
 };
-$('new-session').onclick = () => { clearTimeout(librarySearchTimer); leaveSession(); library.hidden = true; $('setup').hidden = false; document.title = 'New session · Galzu'; };
+$('new-session').onclick = () => { clearTimeout(librarySearchTimer); leaveSession(); library.hidden = true; $('setup').hidden = false; setNav('sessions'); document.title = 'New session · Galzu'; };
 $('brief-files').onchange = async event => {
   const input = event.target, brief = $('create').elements.brief;
   const files = [...input.files]; input.value = '';
