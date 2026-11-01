@@ -109,3 +109,73 @@ func trimLower(s string) string {
 	}
 	return string(out)
 }
+
+// Election is the outcome of choosing a leader. Ballots name a candidate in
+// Choice, so the same table holds both kinds; a ballot for someone ineligible is
+// ignored rather than counted as abstention.
+type Election struct {
+	Decided  bool
+	Winner   string
+	Tie      bool
+	Counts   map[string]int
+	Cast     int
+	Eligible int
+	Reason   string
+}
+
+// DecideElection chooses the candidate with the most ballots. It closes on the
+// same terms as a vote; a tie leaves the herd without a winner, because picking
+// one by any other rule would be the harness deciding who leads.
+func DecideElection(eligible, candidates []string, ballots []Ballot, expired bool) Election {
+	out := Election{Eligible: len(eligible), Counts: map[string]int{}}
+	allowed := make(map[string]bool, len(candidates))
+	for _, id := range candidates {
+		allowed[id] = true
+	}
+	seen := map[string]Ballot{}
+	for _, b := range ballots {
+		seen[b.AgentID] = b
+	}
+	for _, id := range eligible {
+		ballot, ok := seen[id]
+		if !ok {
+			continue
+		}
+		// A ballot for someone who is not standing still counts as having
+		// voted: the agent participated, even if the choice was invalid.
+		out.Cast++
+		if allowed[ballot.Choice] {
+			out.Counts[ballot.Choice]++
+		}
+	}
+	switch {
+	case out.Eligible == 0:
+		out.Decided, out.Reason = true, "no eligible voters"
+		return out
+	case out.Cast >= out.Eligible, expired:
+		out.Decided = true
+	}
+	if !out.Decided {
+		out.Reason = fmt.Sprintf("waiting for %d of %d", out.Eligible-out.Cast, out.Eligible)
+		return out
+	}
+	best, bestCount, tied := "", 0, false
+	for _, id := range candidates {
+		count := out.Counts[id]
+		switch {
+		case count > bestCount:
+			best, bestCount, tied = id, count, false
+		case count == bestCount && count > 0:
+			tied = true
+		}
+	}
+	switch {
+	case bestCount == 0:
+		out.Reason = "closed with no ballots"
+	case tied:
+		out.Tie, out.Reason = true, "tied"
+	default:
+		out.Winner, out.Reason = best, "elected"
+	}
+	return out
+}

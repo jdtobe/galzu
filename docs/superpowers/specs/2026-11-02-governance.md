@@ -1,8 +1,8 @@
 # Governance: proposals and votes
 
-Status: **slice 1 agreed and implemented — general proposals and votes.**
-Leadership transitions, resignation and apoptosis are specified here but not yet
-built.
+Status: **slices 1 and 2 implemented — proposals, votes, no-confidence,
+elections and the transfer of the leader role.** Resignation and apoptosis are
+specified here but not yet built.
 
 The platform design leaves voting eligibility, thresholds and close conditions
 open ([open questions](../specs/2026-10-31-herd-platform-design.md#open-questions-before-implementation)).
@@ -65,16 +65,52 @@ met. A model that decides its own vote has finished cannot award itself a result
   voted)`.
 - Ballots are messages too, so the reasoning behind a vote is in the record.
 
-## Deferred to the next slice
+## No-confidence
 
-- **No-confidence and leadership transitions.** The design calls for electing a
-  replacement leader without human approval, with the outgoing leader preparing
-  a handoff. That is a second vote type with a candidate set and a transfer of
-  authority, and it deserves its own slice rather than being bolted onto a
-  binary tally.
-- **Resignation and apoptosis**, including the bounded handoff timeout.
+A helper may propose `{"action":"propose","kind":"confidence","text":"..."}`.
+The leader is the **subject** and does not vote on its own removal; every other
+agent is eligible, and the ordinary closing and agreement rules apply.
+
+A leader may not move no-confidence in itself. That is a resignation, which has
+a handoff and a successor requirement, and quietly treating one motion as the
+other would lose the distinction.
+
+When the motion passes the harness demotes the leader to helper and opens an
+election automatically. Authority never moves on a failed or incomplete motion.
+
+## Elections
+
+An election asks one question and the ballot names a candidate: any agent in the
+session may stand, including the outgoing leader.
+
+- Participation counts every eligible ballot, including one naming someone who
+  is not standing; an invalid choice is a wasted ballot, not an abstention.
+- The winner is the candidate with the most ballots.
+- **A tie leaves the herd without a leader.** The harness announces it and any
+  agent may propose another election. Breaking the tie by any other rule would
+  mean the harness choosing who leads, which is the thing elections exist to
+  avoid.
+- One leader at a time is enforced: anyone else holding the role is demoted in
+  the same operation.
+
+The transfer changes roles in the database only. It does not stop in-flight
+inference, and the outgoing leader's next turn simply renders the new roster.
+
+## Storage note
+
+Proposal kind was added after the first slice shipped. There is no migration
+framework, so the schema uses `CREATE TABLE IF NOT EXISTS` plus one guarded
+`ALTER TABLE ... ADD COLUMN` that treats "duplicate column" as success.
+
+## Deferred
+
+- **Resignation and apoptosis**, including the bounded handoff timeout and the
+  leader's successor recommendation.
 - **Vote UI.** Proposals are visible through `GET /api/sessions/{id}/proposals`
   and in the conversation; there is no panel yet.
+- **Vote expiry is lazy**: a vote older than ten minutes closes the next time
+  any turn settles proposals. A herd that has stopped turning will not see a
+  vote close until it turns again.
 
 ## Integration note
 

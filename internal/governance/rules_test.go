@@ -73,3 +73,28 @@ func TestNormaliseChoice(t *testing.T) {
 		}
 	}
 }
+
+func TestElectionChoosesTheMostBallots(t *testing.T) {
+	e := DecideElection([]string{"a", "b", "c"}, []string{"a", "b", "c"},
+		[]Ballot{{AgentID: "a", Choice: "b"}, {AgentID: "b", Choice: "b"}, {AgentID: "c", Choice: "c"}}, false)
+	if !e.Decided || e.Winner != "b" || e.Counts["b"] != 2 {
+		t.Fatalf("%+v", e)
+	}
+}
+
+func TestElectionTieHasNoWinner(t *testing.T) {
+	e := DecideElection([]string{"a", "b"}, []string{"a", "b"},
+		[]Ballot{{AgentID: "a", Choice: "a"}, {AgentID: "b", Choice: "b"}}, false)
+	if !e.Decided || !e.Tie || e.Winner != "" {
+		t.Fatalf("%+v", e)
+	}
+}
+
+// A ballot for someone who is not standing is ignored, not treated as a vote.
+func TestElectionIgnoresIneligibleCandidates(t *testing.T) {
+	e := DecideElection([]string{"a", "b"}, []string{"a", "b"},
+		[]Ballot{{AgentID: "a", Choice: "ghost"}, {AgentID: "b", Choice: "a"}}, false)
+	if !e.Decided || e.Winner != "a" || e.Cast != 2 {
+		t.Fatalf("%+v", e)
+	}
+}

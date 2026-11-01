@@ -11,7 +11,7 @@ import (
 func TestProposalsEndpointShowsBallots(t *testing.T) {
 	ctx := context.Background()
 	h, s := newScopeServer(t, "s")
-	id, err := s.OpenProposal(ctx, "s", "a", "Should we probe port 22 first?")
+	id, err := s.OpenProposal(ctx, "s", "a", "vote", "Should we probe port 22 first?")
 	if err != nil {
 		t.Fatal(err)
 	}

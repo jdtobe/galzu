@@ -10,7 +10,10 @@ import (
 )
 
 // promptProtocol versions the canonical byte layout. Rendering changes that can
-// alter existing text require a new version and a new compaction epoch.
+// alter existing text require a new version; the version is rendered into the
+// preamble and the epoch header, and it is the only record that the layout
+// changed. Nothing stores a version per session, so a bump costs one cold prompt
+// per agent and no migration.
 const promptProtocol = 2
 
 // Prompt budgets in UTF-8 bytes of rendered entries. Compaction happens rarely
@@ -148,6 +151,7 @@ Reply with exactly one JSON object and nothing else:
 {"action":"direct","recipient":"<agent id>","text":"..."} private message
 {"action":"help","recipient":"<agent id or empty>","text":"..."} help request
 {"action":"propose","text":"..."} put a yes/no question to the herd
+{"action":"propose","kind":"confidence","text":"..."} move no confidence in the leader
 {"action":"vote","proposal":<id>,"choice":"yes" or "no","text":"..."} vote, with your reason
 {"action":"rest","text":""} stay quiet
 Add "memory": a JSON string with your updated private working memory, at most 2048 UTF-8 bytes. Preserve evidence sources, uncertainty, disagreement, and unanswered questions; distinguish claims from observations.
@@ -174,6 +178,15 @@ func entryLine(m store.Message, viewer string) string {
 	return fmt.Sprintf("%d %s %s: %s", m.ID, sender, kind, m.Body)
 }
 
+func hasElection(proposals []store.Proposal) bool {
+	for _, proposal := range proposals {
+		if proposal.Kind == "election" {
+			return true
+		}
+	}
+	return false
+}
+
 // turnPacket carries everything that changes between turns.
 func turnPacket(in promptInput) string {
 	var b strings.Builder
@@ -194,21 +207,32 @@ func turnPacket(in promptInput) string {
 		fmt.Fprintf(&b, "\n%s | %s | %s | %s | %s", peer.ID, peer.Name, peer.Role, peer.Status, state)
 	}
 	if len(in.Proposals) > 0 {
-		b.WriteString("\nOpen proposals (id | proposer | yes-no | your ballot | question):")
+		b.WriteString("\nOpen proposals (id | kind | tally | your ballot | question):")
 		for _, proposal := range in.Proposals {
-			yes, no, mine := 0, 0, "not voted"
+			counts := map[string]int{}
+			mine := "not voted"
 			for _, ballot := range in.Ballots[proposal.ID] {
-				switch ballot.Choice {
-				case "yes":
-					yes++
-				case "no":
-					no++
-				}
+				counts[ballot.Choice]++
 				if ballot.AgentID == in.Agent.ID {
 					mine = ballot.Choice
 				}
 			}
-			fmt.Fprintf(&b, "\n%d | %s | %d-%d | %s | %s", proposal.ID, proposal.AuthorID, yes, no, mine, proposal.Body)
+			tally := fmt.Sprintf("%d-%d", counts["yes"], counts["no"])
+			if proposal.Kind == "election" {
+				parts := make([]string, 0, len(counts))
+				for id, n := range counts {
+					parts = append(parts, fmt.Sprintf("%s:%d", id, n))
+				}
+				sort.Strings(parts)
+				tally = strings.Join(parts, " ")
+				if tally == "" {
+					tally = "no ballots"
+				}
+			}
+			fmt.Fprintf(&b, "\n%d | %s | %s | %s | %s", proposal.ID, proposal.Kind, tally, mine, proposal.Body)
+		}
+		if hasElection(in.Proposals) {
+			b.WriteString("\nIn an election, name a candidate agent id as your choice.")
 		}
 	}
 	switch in.Recovery.Category {

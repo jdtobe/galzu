@@ -79,7 +79,7 @@ message with a fixed role.
 ### L0 — session preamble (shared by every agent on the model)
 
 ```
-GARTH v1
+GALZU v2
 Session <id>
 Goal: <verbatim session goal>
 
@@ -161,7 +161,7 @@ where changing them costs nothing.
 Turn 1, after messages 1–3:
 
 ```
-system   [L0] GARTH v1 ... Reply with exactly one JSON object ...
+system   [L0] GALZU v2 ... Reply with exactly one JSON object ...
 system   [L1] You are agent a1. Role: leader.
 system   [L2] EPOCH 0 ... Summary: none ...
 user     [L3] 1 host public: Let's plan the release.
@@ -173,7 +173,7 @@ user     [L4] TURN ... memory ... roster ... Reply now.
 Turn 2, after messages 4–5 arrive:
 
 ```
-system   [L0] GARTH v1 ...                   (identical bytes)
+system   [L0] GALZU v2 ...                   (identical bytes)
 system   [L1] You are agent a1 ...           (identical bytes)
 system   [L2] EPOCH 0 ...                    (identical bytes)
 user     [L3] 1 host public: ...             (identical bytes)
@@ -200,9 +200,12 @@ protocol version bump and a new epoch.
 - Stable separators; no blank line between entries.
 - Integer message IDs in decimal, no padding.
 
-A debug build computes `sha256(Fixed)` and compares it to
-`prompt_epochs.prefix_hash`. A mismatch without an epoch bump is a bug and is
-recorded as `prompt_prefix_drift`.
+Implementation status: the contents below L0/L1 are enforced by tests, but the
+epoch machinery is not built. There is no `prompt_epochs` table and no
+`prefix_hash` check; the only persisted state is `agent_prompt_state.cut_message_id`,
+which moves forward at compaction. Changing the rendered bytes of the prefix —
+including bumping `promptProtocol` — therefore costs a cold cache once and is
+recorded nowhere. The hash check is a good idea and is not implemented.
 
 ## Lifecycle
 

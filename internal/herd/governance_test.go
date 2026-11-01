@@ -2,6 +2,7 @@ package herd
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -35,7 +36,7 @@ func TestSettleProposalsClosesWhenEveryoneVoted(t *testing.T) {
 		{ID: "b", SessionID: "s", Name: "Beau", Role: "helper", Model: "m", Status: "ready"},
 	}
 	s := openHerd(t, agents, 2)
-	id, err := s.OpenProposal(ctx, "s", "a", "Should we probe port 22 first?")
+	id, err := s.OpenProposal(ctx, "s", "a", "vote", "Should we probe port 22 first?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func TestSettleProposalsPassesOnMajority(t *testing.T) {
 		{ID: "c", SessionID: "s", Name: "Cy", Role: "helper", Model: "m", Status: "ready"},
 	}
 	s := openHerd(t, agents, 3)
-	id, err := s.OpenProposal(ctx, "s", "a", "Do we need more evidence?")
+	id, err := s.OpenProposal(ctx, "s", "a", "vote", "Do we need more evidence?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +102,7 @@ func TestSettleProposalsLeavesAnIncompleteVoteOpen(t *testing.T) {
 		{ID: "b", SessionID: "s", Name: "Beau", Role: "helper", Model: "m", Status: "ready"},
 	}
 	s := openHerd(t, agents, 2)
-	id, err := s.OpenProposal(ctx, "s", "a", "Question?")
+	id, err := s.OpenProposal(ctx, "s", "a", "vote", "Question?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +180,7 @@ func (v *voter) Chat(context.Context, string, []ollama.Message) (ollama.Reply, e
 func TestAgentCanVote(t *testing.T) {
 	ctx := context.Background()
 	s := openHerd(t, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}, 1)
-	id, err := s.OpenProposal(ctx, "s", "a", "Question?")
+	id, err := s.OpenProposal(ctx, "s", "a", "vote", "Question?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,5 +224,135 @@ func TestAgentCanVote(t *testing.T) {
 			t.Fatalf("vote stayed %q", proposals[0].Status)
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+func roles(t *testing.T, s *store.Store) map[string]string {
+	t.Helper()
+	_, agents, err := s.GetSession(context.Background(), "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{}
+	for _, a := range agents {
+		out[a.ID] = a.Role
+	}
+	return out
+}
+
+// A passed no-confidence motion removes the leader, opens an election, and the
+// subject does not get a ballot in its own removal.
+func TestConfidenceRemovesTheLeaderAndOpensAnElection(t *testing.T) {
+	ctx := context.Background()
+	agents := []store.Agent{
+		{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"},
+		{ID: "b", SessionID: "s", Name: "Beau", Role: "helper", Model: "m", Status: "ready"},
+		{ID: "c", SessionID: "s", Name: "Cy", Role: "helper", Model: "m", Status: "ready"},
+	}
+	s := openHerd(t, agents, 3)
+	id, err := s.OpenProposal(ctx, "s", "b", "confidence", "The leader is dismissing evidence")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The subject, a, does not vote. Two helpers is a full ballot of the eligible.
+	for _, vote := range []string{"b", "c"} {
+		if err := s.CastBallot(ctx, id, vote, "yes", "it keeps happening"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := New(s, restsAtOnce{})
+	defer r.Stop()
+	r.settleProposals(store.Session{ID: "s"}, agents)
+
+	roles := roles(t, s)
+	if roles["a"] != "helper" {
+		t.Fatalf("leader still leads: %+v", roles)
+	}
+	proposals, err := s.Proposals(ctx, "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(proposals) != 2 || proposals[1].Kind != "election" || proposals[1].Status != "open" {
+		t.Fatalf("expected an open election: %+v", proposals)
+	}
+	if proposals[0].Status != "passed" {
+		t.Fatalf("motion status = %q", proposals[0].Status)
+	}
+}
+
+// An election moves authority to the winner and leaves exactly one leader.
+func TestElectionPromotesTheWinner(t *testing.T) {
+	ctx := context.Background()
+	agents := []store.Agent{
+		{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"},
+		{ID: "b", SessionID: "s", Name: "Beau", Role: "helper", Model: "m", Status: "ready"},
+		{ID: "c", SessionID: "s", Name: "Cy", Role: "helper", Model: "m", Status: "ready"},
+	}
+	s := openHerd(t, agents, 3)
+	id, err := s.OpenProposal(ctx, "s", "b", "election", "Who leads?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for agent, candidate := range map[string]string{"a": "b", "b": "b", "c": "b"} {
+		if err := s.CastBallot(ctx, id, agent, candidate, "steady"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := New(s, restsAtOnce{})
+	defer r.Stop()
+	r.settleProposals(store.Session{ID: "s"}, agents)
+
+	roles := roles(t, s)
+	if roles["b"] != "leader" || roles["a"] != "helper" || roles["c"] != "helper" {
+		t.Fatalf("roles = %+v", roles)
+	}
+	proposals, _ := s.Proposals(ctx, "s")
+	if proposals[0].Status != "passed" {
+		t.Fatalf("election status = %q", proposals[0].Status)
+	}
+}
+
+// A tie leaves the herd without a leader rather than letting the harness choose.
+func TestElectionTieLeavesNoLeader(t *testing.T) {
+	ctx := context.Background()
+	agents := []store.Agent{
+		{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"},
+		{ID: "b", SessionID: "s", Name: "Beau", Role: "helper", Model: "m", Status: "ready"},
+	}
+	s := openHerd(t, agents, 2)
+	id, err := s.OpenProposal(ctx, "s", "a", "election", "Who leads?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CastBallot(ctx, id, "a", "a", "me"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CastBallot(ctx, id, "b", "b", "me"); err != nil {
+		t.Fatal(err)
+	}
+	r := New(s, restsAtOnce{})
+	defer r.Stop()
+	r.settleProposals(store.Session{ID: "s"}, agents)
+
+	if roles := roles(t, s); roles["a"] != "leader" {
+		t.Fatalf("a tie installed a leader: %+v", roles)
+	}
+	proposals, _ := s.Proposals(ctx, "s")
+	if proposals[0].Status != "failed" || proposals[0].Result != "tied" {
+		t.Fatalf("tie result = %+v", proposals[0])
+	}
+}
+
+// A leader may not move no confidence in itself; that is a resignation.
+func TestLeaderCannotMoveNoConfidenceInItself(t *testing.T) {
+	s := openHerd(t, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}, 1)
+	r := New(s, restsAtOnce{})
+	defer r.Stop()
+	leader := store.Agent{ID: "a", SessionID: "s", Role: "leader", Status: "ready"}
+	_, err := r.handleGovernance(store.Session{ID: "s"}, leader, []store.Agent{leader},
+		ollama.Reply{Action: "propose", Kind: "confidence", Text: "remove me"}, 0, nil)
+	var invalid *ollama.ValidationError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("err = %v, want a validation error", err)
 	}
 }

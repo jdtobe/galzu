@@ -21,6 +21,7 @@ type Reply struct {
 	Recipient string  `json:"recipient,omitempty"`
 	Proposal  int64   `json:"proposal,omitempty"`
 	Choice    string  `json:"choice,omitempty"`
+	Kind      string  `json:"kind,omitempty"`
 	Memory    *string `json:"memory,omitempty"`
 	// Server-side accounting. prompt_eval_count is the whole prompt, not just
 	// cache misses, so the duration is what reveals a cache hit.
