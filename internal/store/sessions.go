@@ -84,10 +84,17 @@ func (s *Store) ListSessions(ctx context.Context, query SessionQuery) ([]Session
 (SELECT COUNT(*) FROM agents a WHERE a.session_id=s.id),
 COALESCE((SELECT MAX(created_at) FROM events e WHERE e.session_id=s.id),'') AS last_activity
 FROM sessions s LEFT JOIN session_names n ON n.session_id=s.id
-WHERE (?='' OR s.status=?) AND (?='' OR
-instr(lower(COALESCE(n.name,'')),lower(?))>0 OR
-instr(lower(s.goal),lower(?))>0 OR instr(lower(s.id),lower(?))>0)
-ORDER BY last_activity DESC,s.id LIMIT ? OFFSET ?`, query.Status, query.Status, query.Search, query.Search, query.Search, query.Search, query.Limit, query.Offset)
+WHERE (@status='' OR s.status=@status) AND (@q='' OR
+instr(lower(COALESCE(n.name,'')),lower(@q))>0 OR
+instr(lower(s.goal),lower(@q))>0 OR
+instr(lower(s.brief),lower(@q))>0 OR
+instr(lower(s.id),lower(@q))>0 OR
+EXISTS (SELECT 1 FROM findings f WHERE f.session_id=s.id AND
+  (instr(lower(f.claim),lower(@q))>0 OR
+   EXISTS (SELECT 1 FROM finding_evidence e WHERE e.finding_id=f.id AND instr(lower(e.body),lower(@q))>0))))
+ORDER BY last_activity DESC,s.id LIMIT @limit OFFSET @offset`,
+		sql.Named("status", query.Status), sql.Named("q", query.Search),
+		sql.Named("limit", query.Limit), sql.Named("offset", query.Offset))
 	if err != nil {
 		return nil, err
 	}

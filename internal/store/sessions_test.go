@@ -67,7 +67,7 @@ func TestSessionSearchAndStatusFilters(t *testing.T) {
 	defer s.Close()
 	for _, v := range []Session{
 		{ID: "s-literal", Name: "100%_Real", Goal: "A literal search", Status: "paused", Concurrency: 1},
-		{ID: "s-upper", Name: "Imposter experiment", Goal: "Observations", Status: "paused", Concurrency: 1},
+		{ID: "s-upper", Name: "Imposter experiment", Goal: "Observations", Brief: "briefneedle context", Status: "paused", Concurrency: 1},
 		{ID: "target-42", Name: "Other", Goal: "Evidence investigation", Status: "running", Concurrency: 1},
 		{ID: "s-legacy", Goal: "Legacy evidence", Status: "paused", Concurrency: 1},
 	} {
@@ -79,6 +79,9 @@ func TestSessionSearchAndStatusFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.AppendSocialMessage(ctx, "target-42", "", "target-42-a", "direct", "secretmessageonly", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateFinding(ctx, "target-42", "target-42-a", "sharedclaimword about the evidence", "supporting evidenceword", ""); err != nil {
 		t.Fatal(err)
 	}
 	memory := "secretmemoryonly"
@@ -98,6 +101,9 @@ func TestSessionSearchAndStatusFilters(t *testing.T) {
 		{"100%_", "", []string{"s-literal"}},
 		{"", "paused", []string{"s-legacy", "s-literal", "s-upper"}},
 		{"' OR 1=1 --", "", []string{}},
+		{"briefneedle", "", []string{"s-upper"}},
+		{"sharedclaimword", "", []string{"target-42"}},
+		{"evidenceword", "", []string{"target-42"}},
 		{"secretmessageonly", "", []string{}},
 		{"secretmemoryonly", "", []string{}},
 	} {
