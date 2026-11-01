@@ -128,10 +128,13 @@ func TestDeletingASessionRemovesItsFindings(t *testing.T) {
 	if err := s.EndorseFinding(ctx, "s", finding.ID, "b", "agree", ""); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.RequestReview(ctx, "s", finding.ID, "a", "b", "check this"); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.DeleteSession(ctx, "s"); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"findings", "finding_revisions", "finding_evidence", "finding_positions"} {
+	for _, table := range []string{"findings", "finding_revisions", "finding_evidence", "finding_positions", "finding_reviews"} {
 		var count int
 		if err := s.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("orphaned %s: %d %v", table, count, err)
