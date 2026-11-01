@@ -30,7 +30,7 @@ func TestInferenceRecoveryPolicy(t *testing.T) {
 		body   string
 		status int
 	}{
-		{`{"goal":"test","concurrency":1,"inference_timeout_ms":5000,"retry_delays_ms":[],"agents":[{"name":"Ada","role":"leader","model":"m"}]}`, 201},
+		{`{"name":"My experiment","goal":"test","concurrency":1,"inference_timeout_ms":5000,"retry_delays_ms":[],"agents":[{"name":"Ada","role":"leader","model":"m"}]}`, 201},
 		{`{"goal":"test","concurrency":1,"inference_timeout_ms":20,"agents":[{"name":"Ada","role":"leader","model":"m"}]}`, 400},
 		{`{"goal":"test","concurrency":1,"retry_delays_ms":[0],"agents":[{"name":"Ada","role":"leader","model":"m"}]}`, 400},
 	} {
@@ -47,7 +47,7 @@ func TestInferenceRecoveryPolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			saved, _, err := s.GetSession(ctx, result.Session.ID)
-			if err != nil || saved.InferenceTimeoutMS != 5000 || saved.RetryDelaysMS == nil || len(saved.RetryDelaysMS) != 0 {
+			if err != nil || saved.Name != "My experiment" || saved.InferenceTimeoutMS != 5000 || saved.RetryDelaysMS == nil || len(saved.RetryDelaysMS) != 0 {
 				t.Fatalf("%+v %v", saved, err)
 			}
 		}

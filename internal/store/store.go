@@ -12,6 +12,7 @@ import (
 
 type Session struct {
 	ID                 string `json:"id"`
+	Name               string `json:"name"`
 	Goal               string `json:"goal"`
 	Status             string `json:"status"`
 	Concurrency        int    `json:"concurrency"`
@@ -91,6 +92,11 @@ func Open(path string) (*Store, error) {
 	}
 	if err == nil {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_memory(agent_id TEXT PRIMARY KEY REFERENCES agents(id), content TEXT NOT NULL, fresh INTEGER NOT NULL)`)
+	}
+	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS session_names(session_id TEXT PRIMARY KEY REFERENCES sessions(id), name TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS events_session_activity ON events(session_id,created_at);
+CREATE INDEX IF NOT EXISTS agents_session ON agents(session_id);`)
 	}
 	if err != nil {
 		db.Close()
@@ -259,6 +265,9 @@ func (s *Store) CreateSession(ctx context.Context, v Session, agents []Agent) er
 	if _, e = tx.ExecContext(ctx, `INSERT INTO sessions VALUES(?,?,?,?)`, v.ID, v.Goal, v.Status, v.Concurrency); e != nil {
 		return e
 	}
+	if _, e = tx.ExecContext(ctx, `INSERT INTO session_names(session_id,name) VALUES(?,?)`, v.ID, v.Name); e != nil {
+		return e
+	}
 	if v.TargetIP != "" {
 		if _, e = tx.ExecContext(ctx, `INSERT INTO network_policies VALUES(?,?,?)`, v.ID, v.TargetIP, v.RateIntervalMS); e != nil {
 			return e
@@ -392,7 +401,7 @@ func (s *Store) CompleteRestWithMemory(ctx context.Context, sessionID, agentID s
 func (s *Store) GetSession(ctx context.Context, id string) (Session, []Agent, error) {
 	var v Session
 	var delays string
-	e := s.db.QueryRowContext(ctx, `SELECT s.id,s.goal,s.status,s.concurrency,COALESCE(p.target_ip,''),COALESCE(p.rate_interval_ms,0),COALESCE(i.timeout_ms,600000),COALESCE(i.retry_delays,'[2000,10000,30000]') FROM sessions s LEFT JOIN network_policies p ON p.session_id=s.id LEFT JOIN inference_policies i ON i.session_id=s.id WHERE s.id=?`, id).Scan(&v.ID, &v.Goal, &v.Status, &v.Concurrency, &v.TargetIP, &v.RateIntervalMS, &v.InferenceTimeoutMS, &delays)
+	e := s.db.QueryRowContext(ctx, `SELECT s.id,COALESCE(n.name,''),s.goal,s.status,s.concurrency,COALESCE(p.target_ip,''),COALESCE(p.rate_interval_ms,0),COALESCE(i.timeout_ms,600000),COALESCE(i.retry_delays,'[2000,10000,30000]') FROM sessions s LEFT JOIN session_names n ON n.session_id=s.id LEFT JOIN network_policies p ON p.session_id=s.id LEFT JOIN inference_policies i ON i.session_id=s.id WHERE s.id=?`, id).Scan(&v.ID, &v.Name, &v.Goal, &v.Status, &v.Concurrency, &v.TargetIP, &v.RateIntervalMS, &v.InferenceTimeoutMS, &delays)
 	if e != nil {
 		return v, nil, e
 	}

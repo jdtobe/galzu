@@ -14,6 +14,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +35,8 @@ func New(s *store.Store, r *herd.Runner) http.Handler {
 	r.OnChange = v.notify
 	m := http.NewServeMux()
 	m.HandleFunc("POST /api/sessions", v.create)
+	m.HandleFunc("GET /api/sessions", v.listSessions)
+	m.HandleFunc("POST /api/sessions/{id}/name", v.renameSession)
 	m.HandleFunc("GET /api/sessions/{id}", v.snapshot)
 	m.HandleFunc("POST /api/sessions/{id}/messages", v.message)
 	m.HandleFunc("POST /api/sessions/{id}/pause", v.pause)
@@ -122,6 +125,7 @@ func failure(w http.ResponseWriter, e error) {
 }
 func (v *server) create(w http.ResponseWriter, r *http.Request) {
 	var input struct {
+		Name               string `json:"name"`
 		Goal               string `json:"goal"`
 		Concurrency        int    `json:"concurrency"`
 		Thinking           bool   `json:"thinking"`
@@ -141,6 +145,11 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(input.Goal) == "" || len(input.Goal) > 4096 || input.Concurrency < 1 || input.Concurrency > 32 || len(input.Agents) == 0 || len(input.Agents) > 200 {
 		http.Error(w, "invalid goal, concurrency, or agent count", 400)
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	if len(input.Name) > 160 {
+		http.Error(w, "session name must be at most 160 UTF-8 bytes", 400)
 		return
 	}
 	if input.InferenceTimeoutMS == 0 {
@@ -188,7 +197,7 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 		failure(w, e)
 		return
 	}
-	s := store.Session{ID: sid, Goal: input.Goal, Concurrency: input.Concurrency, Status: "running", TargetIP: input.TargetIP, RateIntervalMS: input.RateIntervalMS, InferenceTimeoutMS: input.InferenceTimeoutMS, RetryDelaysMS: input.RetryDelaysMS}
+	s := store.Session{ID: sid, Name: input.Name, Goal: input.Goal, Concurrency: input.Concurrency, Status: "running", TargetIP: input.TargetIP, RateIntervalMS: input.RateIntervalMS, InferenceTimeoutMS: input.InferenceTimeoutMS, RetryDelaysMS: input.RetryDelaysMS}
 	agents := make([]store.Agent, 0, len(input.Agents))
 	for _, a := range input.Agents {
 		aid, e := id()
@@ -213,6 +222,49 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 	v.r.Notify(sid)
 	respond(w, 201, map[string]any{"session": s, "agents": agents})
 }
+func (v *server) listSessions(w http.ResponseWriter, r *http.Request) {
+	offset := 0
+	if value := r.URL.Query().Get("offset"); value != "" {
+		var err error
+		offset, err = strconv.Atoi(value)
+		if err != nil || offset < 0 {
+			http.Error(w, "invalid offset", 400)
+			return
+		}
+	}
+	entries, err := v.s.ListSessions(r.Context(), 51, offset)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	more := len(entries) > 50
+	if more {
+		entries = entries[:50]
+	}
+	respond(w, 200, map[string]any{"sessions": entries, "more": more})
+}
+
+func (v *server) renameSession(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := decode(w, r, &input); err != nil {
+		http.Error(w, "invalid name", 400)
+		return
+	}
+	input.Name = strings.TrimSpace(input.Name)
+	if input.Name == "" || len(input.Name) > 160 {
+		http.Error(w, "name must contain 1–160 UTF-8 bytes", 400)
+		return
+	}
+	if err := v.s.RenameSession(r.Context(), r.PathValue("id"), input.Name); err != nil {
+		failure(w, err)
+		return
+	}
+	v.notify(r.PathValue("id"))
+	respond(w, 200, map[string]string{"name": input.Name})
+}
+
 func (v *server) snapshot(w http.ResponseWriter, r *http.Request) {
 	s, a, e := v.s.GetSession(r.Context(), r.PathValue("id"))
 	if e != nil {
