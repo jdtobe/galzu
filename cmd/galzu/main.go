@@ -33,7 +33,7 @@ func defaultDBPath() string {
 }
 
 func main() {
-	listen := flag.String("listen", "127.0.0.1:8080", "HTTP listen address")
+	listen := flag.String("listen", "127.0.0.1:8888", "HTTP listen address")
 	db := flag.String("db", defaultDBPath(), "SQLite database path")
 	endpoint := flag.String("ollama", "http://127.0.0.1:11434", "Ollama server URL")
 	flag.Parse()
