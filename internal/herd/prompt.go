@@ -285,6 +285,13 @@ func turnPacket(in promptInput) string {
 			}
 		}
 		b.WriteString("\nAgreement is not verification. Challenge with evidence, revise with the finding action, and endorse with a reason.")
+		positions := 0
+		for _, finding := range in.Findings {
+			positions += len(finding.Positions)
+		}
+		if positions == 0 {
+			b.WriteString("\nNo finding has a position yet. If you have evidence, endorse or challenge one.")
+		}
 	}
 	switch {
 	case in.Plan == nil:

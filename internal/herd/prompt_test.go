@@ -187,3 +187,17 @@ func TestPlanShowsTheDecisionItImplements(t *testing.T) {
 		t.Fatalf("missing decision provenance:\n%s", text)
 	}
 }
+
+func TestFindingsWithNoPositionsInviteAPosition(t *testing.T) {
+	session, me, peers := fixture()
+	findings := []store.Finding{{ID: 1, Claim: "A claim"}}
+	text := promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Findings: findings}).Tail())
+	if !strings.Contains(text, "No finding has a position yet.") {
+		t.Fatalf("missing nudge:\n%s", text)
+	}
+	findings[0].Positions = []store.FindingPosition{{AgentID: "a2", Choice: "agree"}}
+	text = promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Findings: findings}).Tail())
+	if strings.Contains(text, "No finding has a position yet.") {
+		t.Fatalf("nudge persisted with a position:\n%s", text)
+	}
+}
