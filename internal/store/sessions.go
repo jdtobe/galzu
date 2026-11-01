@@ -15,12 +15,22 @@ type SessionEntry struct {
 	LastActivity string `json:"last_activity"`
 }
 
-func (s *Store) ListSessions(ctx context.Context, limit, offset int) ([]SessionEntry, error) {
+type SessionQuery struct {
+	Search string
+	Status string
+	Limit  int
+	Offset int
+}
+
+func (s *Store) ListSessions(ctx context.Context, query SessionQuery) ([]SessionEntry, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT s.id,COALESCE(n.name,''),s.goal,s.status,
 (SELECT COUNT(*) FROM agents a WHERE a.session_id=s.id),
 COALESCE((SELECT MAX(created_at) FROM events e WHERE e.session_id=s.id),'') AS last_activity
 FROM sessions s LEFT JOIN session_names n ON n.session_id=s.id
-ORDER BY last_activity DESC,s.id LIMIT ? OFFSET ?`, limit, offset)
+WHERE (?='' OR s.status=?) AND (?='' OR
+instr(lower(COALESCE(n.name,'')),lower(?))>0 OR
+instr(lower(s.goal),lower(?))>0 OR instr(lower(s.id),lower(?))>0)
+ORDER BY last_activity DESC,s.id LIMIT ? OFFSET ?`, query.Status, query.Status, query.Search, query.Search, query.Search, query.Search, query.Limit, query.Offset)
 	if err != nil {
 		return nil, err
 	}

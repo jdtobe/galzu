@@ -23,7 +23,7 @@ func TestConversationWorkspaceAssets(t *testing.T) {
 		path    string
 		content []string
 	}{
-		{"/", []string{`id="agents"`, `id="agent-detail"`, `id="send"`, `id="storage-recover"`, `id="rename-session"`, `data-filter="direct"`, `src="/ui.js"`, `src="/app.js"`}},
+		{"/", []string{`id="agents"`, `id="agent-detail"`, `id="send"`, `id="storage-recover"`, `id="rename-session"`, `id="session-query"`, `id="session-status"`, `id="clear-session-filters"`, `data-filter="direct"`, `src="/ui.js"`, `src="/app.js"`}},
 		{"/style.css", []string{".session-workspace", ".inspector", "@media (max-width: 700px)"}},
 		{"/ui.js", []string{"agentState", "visibleMessage", "deliveryState"}},
 		{"/app.js", []string{"renderAgentDetail", "renderMessages", "refreshLibrary"}},

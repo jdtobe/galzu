@@ -232,7 +232,12 @@ func (v *server) listSessions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	entries, err := v.s.ListSessions(r.Context(), 51, offset)
+	query := store.SessionQuery{Search: strings.TrimSpace(r.URL.Query().Get("q")), Status: r.URL.Query().Get("status"), Limit: 51, Offset: offset}
+	if len(query.Search) > 512 || (query.Status != "" && query.Status != "running" && query.Status != "paused") {
+		http.Error(w, "search must be at most 512 UTF-8 bytes and status must be running or paused", 400)
+		return
+	}
+	entries, err := v.s.ListSessions(r.Context(), query)
 	if err != nil {
 		failure(w, err)
 		return

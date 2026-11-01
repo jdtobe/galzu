@@ -2,6 +2,7 @@ let current = '', stream, status = '', snapshot;
 let refreshSequence = 0, navigationSequence = 0, librarySequence = 0, libraryPage = 0;
 let currentAgents = [], selectedAgent = '', messageFilter = 'all', messageSignature = '';
 let seenLastMessage = 0;
+let librarySearchTimer;
 const $ = id => document.getElementById(id);
 const drafts = new Map(), pendingControls = new Set();
 const library = $('library');
@@ -52,16 +53,39 @@ function leaveSession() {
   clearError();
 }
 async function showLibrary() {
+  clearTimeout(librarySearchTimer);
   leaveSession(); $('setup').hidden = true; library.hidden = false;
   document.title = 'Garth · Sessions';
   await refreshLibrary();
 }
 async function refreshLibrary() {
+  clearTimeout(librarySearchTimer);
   const sequence = ++librarySequence;
-  const result = await api(`/api/sessions?offset=${libraryPage * 50}`);
+  const search = $('session-query').value.trim(), filterStatus = $('session-status').value;
+  const params = new URLSearchParams({offset:libraryPage * 50, q:search, status:filterStatus});
+  setLibraryBusy();
+  let result;
+  try {
+    result = await api(`/api/sessions?${params}`);
+  } catch(error) {
+    if (sequence === librarySequence && !library.hidden) {
+      $('session-list').replaceChildren();
+      $('session-results').textContent = 'Could not load sessions. Use Refresh list to retry.';
+      report(error);
+    }
+    return;
+  } finally {
+    if (sequence === librarySequence) {
+      $('session-list').setAttribute('aria-busy','false');
+      $('sessions-previous').disabled = libraryPage === 0;
+    }
+  }
   if (sequence !== librarySequence || library.hidden) return;
   const list = $('session-list'); list.replaceChildren();
-  if (!result.sessions.length) list.append(element('p','empty-state',libraryPage ? 'No sessions on this page. Go back or refresh.' : 'No experiments yet. Start a session to bring your group together.'));
+  const filtered = !!(search || filterStatus);
+  if (!result.sessions.length) list.append(element('p','empty-state',libraryPage ? 'No sessions on this page. Go back or refresh.' : filtered ? 'No sessions match these filters. Try another search or clear the filters.' : 'No experiments yet. Start a session to bring your group together.'));
+  const count = result.sessions.length;
+  $('session-results').textContent = `${count} ${filtered ? 'matching ' : ''}${count === 1 ? 'session' : 'sessions'} on this page${result.more ? ' · more available' : ''}`;
   for (const entry of result.sessions) {
     const card = element('article','session-card');
     const top = element('div','card-top');
@@ -79,6 +103,21 @@ async function refreshLibrary() {
   $('sessions-page').textContent = `Page ${libraryPage + 1}`;
   $('sessions-previous').disabled = libraryPage === 0;
   $('sessions-next').disabled = !result.more;
+}
+function setLibraryBusy() {
+  $('session-list').setAttribute('aria-busy','true');
+  $('session-results').textContent = 'Searching sessions…';
+  $('sessions-previous').disabled = true;
+  $('sessions-next').disabled = true;
+  $('clear-session-filters').disabled = !$('session-query').value && !$('session-status').value;
+}
+function filterLibrary(debounce = false) {
+  clearTimeout(librarySearchTimer); clearError();
+  libraryPage = 0;
+  // Invalidate an older response immediately, not after the debounce delay.
+  ++librarySequence; setLibraryBusy();
+  if (debounce) librarySearchTimer = setTimeout(()=>refreshLibrary().catch(report),200);
+  else return refreshLibrary().catch(report);
 }
 
 async function refresh() {
@@ -332,7 +371,14 @@ $('cancel-setup').onclick = () => showLibrary().catch(report);
 $('sessions-previous').onclick = () => { libraryPage = Math.max(0,libraryPage-1); refreshLibrary().catch(report); };
 $('sessions-next').onclick = () => { ++libraryPage; refreshLibrary().catch(report); };
 $('sessions-refresh').onclick = () => { libraryPage = 0; refreshLibrary().catch(report); };
-$('new-session').onclick = () => { leaveSession(); library.hidden = true; $('setup').hidden = false; document.title = 'New session · Garth'; };
+$('session-search').onsubmit = event => { event.preventDefault(); filterLibrary(); };
+$('session-query').oninput = () => filterLibrary(true);
+$('session-status').onchange = () => filterLibrary();
+$('clear-session-filters').onclick = () => {
+  $('session-query').value = ''; $('session-status').value = ''; filterLibrary();
+  $('session-query').focus();
+};
+$('new-session').onclick = () => { clearTimeout(librarySearchTimer); leaveSession(); library.hidden = true; $('setup').hidden = false; document.title = 'New session · Garth'; };
 $('recipient').onchange = updateRecipientWarning;
 $('close-inspector').onclick = () => {
   $('session').classList.remove('inspector-open');
