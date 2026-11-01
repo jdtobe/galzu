@@ -3,7 +3,7 @@
 **Pre-alpha — a single-operator application for running a herd of local models.**
 
 It is not safe to expose: there is no authentication, and it is designed for one
-person on one machine. Agents can talk, help, propose and vote, but they cannot
+person on one machine. Agents can talk, help, publish findings, propose plans and vote, but they cannot
 reach the network on their own behalf — the tool gate and its policy exist, and
 no agent action reaches them yet. Do not run it against a host you are not
 authorised to assess.
