@@ -25,13 +25,14 @@ storage boundary. It does not enforce agreement, truth, or good ideas.
    files. The next step is a bounded, human-approved retrieval of source context
    so plans stop inventing functions and tables. No agent filesystem access
    unless the tool policy gains a read-only, scoped variant.
-2. **Make review meaningful.** Review requests exist, but nothing requires a
-   review before a plan or labels a finding as examined by two agents. Add a
-   visible review state and a human-only "verified" mark, never inferred from
-   agreement.
-3. **Retrieval that ranks.** `recall` returns literal matches in one session.
-   Add relevance ranking and cross-session findings, with the same rule: a
-   retrieved claim is evidence, not authority.
+2. **Make review meaningful.** Review requests exist, a finding is labelled peer
+   reviewed at two non-author positions, and the operator can mark a finding
+   verified. What remains is deciding whether a plan should be gated on a review
+   and how a human mark interacts with a disagreement.
+3. **Retrieval that ranks.** `recall` returns literal matches in one session;
+   the library searches across sessions. Add relevance ranking and, if wanted,
+   recall across sessions, with the same rule: a retrieved claim is evidence, not
+   authority.
 4. **Vote closure controls.** A paused session leaves votes open; the timer only
    runs while the herd does. Decide whether an operator may close a vote with
    current participation, and record who closed it.
