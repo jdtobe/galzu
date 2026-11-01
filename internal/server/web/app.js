@@ -59,6 +59,7 @@ function leaveSession() {
 }
 async function showLibrary() {
   clearTimeout(librarySearchTimer); clearTimeout(findingsSearchTimer);
+  checkDatabase().catch(() => {});
   leaveSession(); $('setup').hidden = true; $('findings-library').hidden = true; library.hidden = false;
   document.title = 'Galzu · Sessions';
   setNav('sessions');
@@ -781,6 +782,14 @@ async function openSession(id) {
   stream.onopen = ()=>{ if (current === id) refresh().catch(report); };
 }
 
+async function checkDatabase() {
+  try {
+    const info = await api('/api/storage');
+    $('database-warning-text').textContent = info.warning || '';
+    $('database-warning').hidden = !info.warning;
+  } catch { /* a storage read failure has its own session banner */ }
+}
+checkDatabase().catch(() => {});
 $('nav-sessions').onclick = () => showLibrary().catch(report);
 $('nav-findings').onclick = () => showFindings().catch(report);
 $('findings-refresh').onclick = () => { findingsPage = 0; refreshFindings().catch(report); };

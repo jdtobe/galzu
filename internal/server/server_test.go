@@ -483,3 +483,42 @@ func TestIdleIntervalValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestDatabasePathWarning(t *testing.T) {
+	for _, path := range []string{"/Users/x/Documents/Code/galzu.db", "/Users/x/Desktop/galzu.db", "/Users/x/Dropbox/galzu.db"} {
+		if warning := syncedPathWarning(path); warning == "" {
+			t.Fatalf("no warning for %s", path)
+		}
+	}
+	for _, path := range []string{"/Users/x/Library/Application Support/Galzu/galzu.db", "/tmp/galzu.db"} {
+		if warning := syncedPathWarning(path); warning != "" {
+			t.Fatalf("unexpected warning for %s: %s", path, warning)
+		}
+	}
+}
+
+func TestDatabaseInfoEndpoint(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/storage", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("%d: %s", w.Code, w.Body.String())
+	}
+	var info struct {
+		Path    string `json:"path"`
+		Warning string `json:"warning"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Path == "" || info.Warning != "" {
+		t.Fatalf("info = %+v", info)
+	}
+}

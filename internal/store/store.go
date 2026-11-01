@@ -57,7 +57,10 @@ type Event struct {
 	Payload   json.RawMessage `json:"payload"`
 	CreatedAt time.Time       `json:"created_at"`
 }
-type Store struct{ db *sql.DB }
+type Store struct {
+	db   *sql.DB
+	path string
+}
 
 const MaxAgentMemoryBytes = 2048
 
@@ -142,9 +145,13 @@ CREATE INDEX IF NOT EXISTS agents_session ON agents(session_id);`)
 		db.Close()
 		return nil, err
 	}
-	return &Store{db}, nil
+	return &Store{db: db, path: path}, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
+
+// Path is the database location, shown to the operator so a synced folder can be
+// recognized without reading the startup log.
+func (s *Store) Path() string { return s.path }
 
 // ProbeWrite commits a real SQLite write, not merely a read or rolled-back transaction.
 func (s *Store) ProbeWrite(ctx context.Context) error {

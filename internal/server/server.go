@@ -42,6 +42,7 @@ func New(s *store.Store, r *herd.Runner) http.Handler {
 	m.HandleFunc("POST /api/sessions/{id}/messages", v.message)
 	m.HandleFunc("POST /api/sessions/{id}/pause", v.pause)
 	m.HandleFunc("POST /api/sessions/{id}/resume", v.resume)
+	m.HandleFunc("GET /api/storage", v.databaseInfo)
 	m.HandleFunc("GET /api/sessions/{id}/storage", v.storageStatus)
 	m.HandleFunc("POST /api/sessions/{id}/storage/recover", v.recoverStorage)
 	m.HandleFunc("POST /api/sessions/{id}/agents/{agent}/settings", v.agentSettings)
