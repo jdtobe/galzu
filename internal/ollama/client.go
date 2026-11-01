@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -31,6 +32,74 @@ type Reply struct {
 	PromptEvalCount    int   `json:"-"`
 	PromptEvalDuration int64 `json:"-"` // nanoseconds
 	EvalCount          int   `json:"-"`
+}
+
+// parseReply accepts the shapes small models actually emit: an object, an
+// object in a markdown fence, or an object with prose around it. It also accepts
+// proposal and finding ids written as strings ("p2", "#2", "2"), which a strict
+// int64 field would otherwise reject as invalid JSON. A UUID-like id becomes 0
+// and is then rejected by the normal validation with a useful reason.
+func parseReply(content string) (Reply, error) {
+	var out Reply
+	text := strings.TrimSpace(content)
+	if err := json.Unmarshal([]byte(text), &out); err == nil {
+		return out, nil
+	}
+	text = stripFence(text)
+	if start, end := strings.IndexByte(text, '{'), strings.LastIndexByte(text, '}'); start >= 0 && end > start {
+		text = text[start : end+1]
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(text), &fields); err != nil {
+		return out, fmt.Errorf("response is not valid JSON: %w", err)
+	}
+	for _, key := range []string{"proposal", "finding"} {
+		if raw, ok := fields[key]; ok {
+			fields[key] = json.RawMessage(coerceID(raw))
+		}
+	}
+	encoded, err := json.Marshal(fields)
+	if err != nil {
+		return out, err
+	}
+	if err = json.Unmarshal(encoded, &out); err != nil {
+		return out, fmt.Errorf("response is not valid JSON: %w", err)
+	}
+	return out, nil
+}
+
+func stripFence(text string) string {
+	if !strings.HasPrefix(text, "```") {
+		return text
+	}
+	if newline := strings.IndexByte(text, '\n'); newline >= 0 {
+		text = text[newline+1:]
+	}
+	if strings.HasSuffix(strings.TrimSpace(text), "```") {
+		text = strings.TrimSuffix(strings.TrimSpace(text), "```")
+	}
+	return strings.TrimSpace(text)
+}
+
+// coerceID returns a JSON integer for a numeric or string id. Anything it cannot
+// read becomes 0 so the action validator can name the problem.
+func coerceID(raw json.RawMessage) string {
+	var n int64
+	if json.Unmarshal(raw, &n) == nil {
+		return strconv.FormatInt(n, 10)
+	}
+	var text string
+	if json.Unmarshal(raw, &text) != nil {
+		return "0"
+	}
+	text = strings.TrimSpace(text)
+	text = strings.TrimPrefix(text, "#")
+	text = strings.TrimPrefix(text, "p")
+	text = strings.TrimPrefix(text, "P")
+	if n, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64); err == nil {
+		return strconv.FormatInt(n, 10)
+	}
+	return "0"
 }
 
 // ValidationError describes a rejected model action. Excerpt is untrusted and
@@ -97,8 +166,9 @@ func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []
 	if e = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&response); e != nil {
 		return out, e
 	}
-	if e = json.Unmarshal([]byte(response.Message.Content), &out); e != nil {
-		return out, invalid("response is not valid JSON", response.Message.Content)
+	out, e = parseReply(response.Message.Content)
+	if e != nil {
+		return out, invalid(e.Error(), response.Message.Content)
 	}
 	out.PromptEvalCount = response.PromptEvalCount
 	out.PromptEvalDuration = response.PromptEvalDuration

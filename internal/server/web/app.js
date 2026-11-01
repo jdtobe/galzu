@@ -701,9 +701,9 @@ function renderAgentDetail() {
   if (!failures.length) history.append(element('p','','No recorded failures.'));
   failures.forEach((failure,index) => {
     const record = element('div','failure-record');
-    record.append(element('p','',`${timeLabel(failure.created_at,true)} · attempt ${failure.attempt} · ${failure.category}`),element('p','',failure.reason));
+    record.append(element('p','',`${timeLabel(failure.created_at,true)} · attempt ${failure.attempt} · ${failure.category}`),element('p','failure-reason',`Rejected because: ${failure.reason || 'no reason was recorded'}`));
     if (failure.excerpt) {
-      const excerpt = details('Rejected output · untrusted; may contain private data',`excerpt-${aid}-${index}`,openKeys);
+      const excerpt = details('Raw model output · untrusted; may contain private data',`excerpt-${aid}-${index}`,openKeys);
       excerpt.append(element('pre','',failure.excerpt)); record.append(excerpt);
     }
     history.append(record);

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -113,5 +115,40 @@ func TestEndorsementNeedsAFindingAndAChoice(t *testing.T) {
 			t.Fatalf("accepted %s", content)
 		}
 		srv.Close()
+	}
+}
+
+func TestStringAndFencedIDsAreAccepted(t *testing.T) {
+	cases := []string{
+		`{"action":"vote","proposal":"p2","choice":"yes","text":"ok"}`,
+		"```json\n{\"action\":\"vote\",\"proposal\":\"2\",\"choice\":\"yes\",\"text\":\"ok\"}\n```",
+		`Here is my answer: {"action":"endorse","finding":"#3","choice":"agree","text":"ok"} — done.`,
+	}
+	for _, content := range cases {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"message":{"content":` + strconv.Quote(content) + `}}`))
+		}))
+		reply, err := New(srv.URL, srv.Client()).Chat(context.Background(), "m", nil)
+		srv.Close()
+		if err != nil {
+			t.Fatalf("%q: %v", content, err)
+		}
+		if reply.Action == "vote" && reply.Proposal != 2 {
+			t.Fatalf("%q: proposal = %d", content, reply.Proposal)
+		}
+		if reply.Action == "endorse" && reply.Finding != 3 {
+			t.Fatalf("%q: finding = %d", content, reply.Finding)
+		}
+	}
+}
+
+func TestMalformedReplyNamesTheProblem(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"message":{"content":"not json at all"}}`))
+	}))
+	defer srv.Close()
+	_, err := New(srv.URL, srv.Client()).Chat(context.Background(), "m", nil)
+	if err == nil || !strings.Contains(err.Error(), "not valid JSON") {
+		t.Fatalf("err = %v", err)
 	}
 }
