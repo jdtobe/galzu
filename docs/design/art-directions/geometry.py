@@ -126,3 +126,62 @@ def edge_distance(x, y):
         if d < best:
             best = d
     return math.sqrt(best)
+
+
+def glasses_tone(x, y):
+    """True where a point falls on the spectacle rim."""
+    cx, cy, rx, ry = LENS
+    r = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2
+    return 0.72 <= r <= 1.0
+
+
+def shade(x, y):
+    """Tone of the subject at a point: None outside, 0 light to 1 dark."""
+    if not inside(x, y):
+        return None
+    if glasses_tone(x, y) or edge_distance(x, y) < 2.5:
+        return 1.0
+    return 0.82 if in_hair(x, y) else 0.34
+
+
+_CACHE = {}
+
+
+def shade_at(x, y):
+    """Cached shade() on a 2px lattice, so ten renderers can share one pass."""
+    grid = _CACHE.get("grid")
+    if grid is None:
+        step = 2.0
+        xs = [i * step for i in range(int(W / step) + 1)]
+        ys = [j * step for j in range(int(H / step) + 1)]
+        grid = (step, xs, ys, [[shade(x, y) for x in xs] for y in ys])
+        _CACHE["grid"] = grid
+    step, xs, ys, rows = grid
+    i = min(len(xs) - 1, max(0, int(round(x / step))))
+    j = min(len(ys) - 1, max(0, int(round(y / step))))
+    return rows[j][i]
+
+
+def marching(xs, ys, values, level):
+    """Marching squares: line segments where values cross level."""
+    segs = []
+    for j in range(len(ys) - 1):
+        for i in range(len(xs) - 1):
+            v = (values[j][i], values[j][i + 1], values[j + 1][i + 1], values[j + 1][i])
+            corners = ((xs[i], ys[j]), (xs[i + 1], ys[j]),
+                       (xs[i + 1], ys[j + 1]), (xs[i], ys[j + 1]))
+            pts = []
+            for k in range(4):
+                a, b = v[k], v[(k + 1) % 4]
+                if (a < level) != (b < level):
+                    t = (level - a) / (b - a)
+                    pa, pb = corners[k], corners[(k + 1) % 4]
+                    pts.append((pa[0] + (pb[0] - pa[0]) * t,
+                                pa[1] + (pb[1] - pa[1]) * t))
+            if len(pts) == 2:
+                segs.append((pts[0], pts[1]))
+            elif len(pts) == 4:
+                segs.append((pts[0], pts[1]))
+                segs.append((pts[2], pts[3]))
+    return segs
+

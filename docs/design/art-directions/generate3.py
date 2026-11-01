@@ -14,16 +14,10 @@ import random
 import geometry as G
 from geometry import (W, H, INK, LENS, TEMPLE, BRIDGE, MOUTH, NOSTRIL,
                       HAIR_STRANDS, catmull, d_of, ellipse, inside, in_hair,
-                      edge_distance, outline_d, OUTLINE_POLY)
+                      edge_distance, outline_d, OUTLINE_POLY, glasses_tone,
+                      marching)
 
 OUT = Path(__file__).parent
-
-
-def glasses_tone(x, y):
-    """True where a point falls on the spectacle rim or the bridge."""
-    cx, cy, rx, ry = LENS
-    r = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2
-    return 0.72 <= r <= 1.0
 
 
 # ── 1. loom: deflected weft on a warp ──────────────────────────────────
@@ -202,35 +196,12 @@ def _field():
     return xs, ys, h
 
 
-def _marching(xs, ys, h, level):
-    segs = []
-    for j in range(len(ys) - 1):
-        for i in range(len(xs) - 1):
-            v = (h[j][i], h[j][i + 1], h[j + 1][i + 1], h[j + 1][i])
-            corners = ((xs[i], ys[j]), (xs[i + 1], ys[j]),
-                       (xs[i + 1], ys[j + 1]), (xs[i], ys[j + 1]))
-            pts = []
-            for k in range(4):
-                a, b = v[k], v[(k + 1) % 4]
-                if (a < level) != (b < level):
-                    t = (level - a) / (b - a)
-                    pa, pb = corners[k], corners[(k + 1) % 4]
-                    pts.append((pa[0] + (pb[0] - pa[0]) * t,
-                                pa[1] + (pb[1] - pa[1]) * t))
-            if len(pts) == 2:
-                segs.append((pts[0], pts[1]))
-            elif len(pts) == 4:
-                segs.append((pts[0], pts[1]))
-                segs.append((pts[2], pts[3]))
-    return segs
-
-
 def topo():
     xs, ys, h = _field()
     levels = [2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 17.0, 20.0, 24.0, 29.0]
     parts = []
     for n, level in enumerate(levels):
-        segs = _marching(xs, ys, h, level)
+        segs = marching(xs, ys, h, level)
         if not segs:
             continue
         index = n % 3 == 0
