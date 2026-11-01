@@ -20,6 +20,22 @@ Names that survive are either **longer than the available words** (Germinal,
 Trilobate) or **made up**. Testing dictionary words one at a time has a hit rate
 of roughly zero; the table below is the evidence.
 
+## Decision: Garth
+
+Chosen 2026-11-01, with the collision known and accepted. The repo, the module
+path and `garth.db` already carry the name, so the decision costs nothing to
+adopt — the only cost is awareness that `heygarth.ai` exists.
+
+What that means in practice:
+
+| Thing | Status | Do instead |
+|---|---|---|
+| `github.com/garth` org | **free** | Take it — this is the one clean handle in the whole list |
+| `pip install garth` | taken — a Garmin Connect client, v0.8.0, still in use | ship the SDK as `garth-sdk` |
+| `npm install garth` | taken — an abandoned 2019 package | scope it, `@garth/cli` |
+| `garth.com`, `.ai`, `.dev`, `.app` | all taken | pick from the free long tail (`garth.sh`, `.so`, `.co`) |
+| `heygarth.ai` | an AI engineering-intelligence platform by Darner AI | do not market as "AI engineering intelligence", which was never the plan |
+
 ## Dead
 
 | Name | Why | Evidence |
@@ -28,7 +44,6 @@ of roughly zero; the table below is the evidence.
 | **Gravity** | A live AI-agents company plus Google's agent IDE | Gravity (gravity.fast) sells "AI Agents for Business"; Google Antigravity; gravity.com 1993, .ai 2017, .dev 2019, .app 2021 |
 | **Germ** | Contested in social software | Germ Network, Mozilla pre-seed 2024, E2EE DMs shipped inside Bluesky Feb 2026, germ.network 2020; germ.com 1997; ~541 US marks match GERM*; npm and PyPI taken; GitHub username taken |
 | **Geist** | Vercel's typeface family | Geist Sans/Mono/Serif/Pixel, `npm install geist` at 1.9.0, Google Fonts, vercel/geist-font; geist.com 1995, .ai 2018, .dev 2019, .app 2024, .network 2026-05-15 |
-| **Garth** | Live AI engineering product | heygarth.ai by Darner AI ("engineering intelligence platform for AI-assisted development"); every short domain taken |
 | **Gamut** | Direct category collision | gamut.so, "the agentic operating system"; gamut.com/.ai/.dev/.app all taken, npm/PyPI/GitHub org all taken |
 | **Gusto** | Payroll and HR SaaS of that name | every domain, npm, PyPI and the GitHub org taken |
 | **Glint** | Employee-engagement product, acquired by Microsoft | every domain but one, npm, PyPI and the GitHub org taken |
@@ -48,9 +63,9 @@ of roughly zero; the table below is the evidence.
 | **Germline** | `.dev` and `.com` taken, `.ai` free, registries free | The biology meaning is strong but the namespace is half gone |
 | **Germin** | `.ai/.dev` free, npm taken | Short, but `-in` endings read pharmaceutical |
 
-## Recommendation
+## Outcome
 
-**Trilobe** as the product name, **Germ** as the codename the repo already uses.
-The mark is a trilobe, the word is the mark, and nothing in software owns it.
-If it has to be a word that means something before you explain it, **Germinal**,
-said aloud as "Germ".
+**Garth** — see the decision above. **Trilobe** survives as the name of the mark
+itself, which is what the drawing is: three lobes. **Germinal** stays on record
+as the fallback if the collision ever becomes a problem, since it is the only
+name screened clean on every namespace.
