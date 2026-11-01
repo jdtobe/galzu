@@ -14,7 +14,7 @@ import (
 // preamble and the epoch header, and it is the only record that the layout
 // changed. Nothing stores a version per session, so a bump costs one cold prompt
 // per agent and no migration.
-const promptProtocol = 3
+const promptProtocol = 4
 
 // Prompt budgets in UTF-8 bytes of rendered entries. Compaction happens rarely
 // and drops well past the high-water mark so the prefix survives many turns.
