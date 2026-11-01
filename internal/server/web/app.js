@@ -95,6 +95,7 @@ async function refreshFindings() {
     const top = element('div','finding-card-top');
     const session = finding.session_name || finding.session_goal.slice(0,80);
     top.append(element('span','eyebrow',session), element('span',`decision-status ${finding.status}`,finding.status));
+    if (finding.verified) top.append(element('span','decision-status verified','verified'));
     const claim = element('h2','',finding.claim);
     const reviews = (finding.positions || []).filter(p => p.agent_id !== finding.author_id).length;
     const meta = element('p','finding-card-meta',`${finding.author_name || finding.author_id} · ${(finding.evidence || []).length} evidence · ${(finding.positions || []).filter(p=>p.choice==='agree').length} agree · ${(finding.positions || []).filter(p=>p.choice==='disagree').length} disagree${reviews >= 2 ? ' · peer reviewed' : ''}`);
@@ -286,9 +287,11 @@ async function renderFindings(sid) {
     const disagree = (finding.positions || []).filter(p => p.choice === 'disagree').length;
     const reviews = (finding.positions || []).filter(p => p.agent_id !== finding.author_id).length;
     if (finding.status === 'withdrawn') heading.append(element('span','decision-status','withdrawn'));
+    else if (finding.verified) heading.append(element('span','decision-status','verified'));
     if (reviews >= 2) heading.append(element('span','message-label','peer reviewed'));
     heading.append(element('span','finding-tally',`${agree} agree · ${disagree} disagree`));
     item.append(heading, element('p','finding-claim',finding.claim));
+    if (finding.verified) item.append(element('p','finding-verified',`Verified by ${finding.verified_by || 'the operator'}. Agreement is not verification.`));
     for (const evidence of finding.evidence || []) {
       const row = element('p',`finding-evidence ${evidence.stance}`);
       row.append(element('strong','',`${evidence.stance} · ${names.get(evidence.author_id) || evidence.author_id}`), document.createTextNode(` ${evidence.body}`));
@@ -299,6 +302,18 @@ async function renderFindings(sid) {
     }
     for (const review of finding.reviews || []) {
       if (review.status === 'open') item.append(element('p','finding-review',`Review requested from ${names.get(review.reviewer_id) || review.reviewer_id}: ${review.request}`));
+    }
+    if (finding.status !== 'withdrawn') {
+      const verify = element('button','finding-verify',finding.verified ? 'Remove verification' : 'Verify as operator');
+      verify.type = 'button';
+      verify.onclick = async () => {
+        verify.disabled = true;
+        try {
+          await api(`/api/sessions/${encodeURIComponent(sid)}/findings/${finding.id}/verify`, post({verified:!finding.verified}));
+          findingsSignature = ''; await refresh();
+        } catch (error) { report(error); verify.disabled = false; }
+      };
+      item.append(verify);
     }
     if ((finding.revisions || []).length > 1) {
       item.append(element('p','muted',`${finding.revisions.length - 1} ${finding.revisions.length === 2 ? 'revision' : 'revisions'} kept in history`));

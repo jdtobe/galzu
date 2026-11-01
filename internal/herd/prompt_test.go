@@ -241,3 +241,15 @@ func TestReviewsRequestedOfThisAgentAppearInTheTurnPacket(t *testing.T) {
 		}
 	}
 }
+
+func TestVerifiedFindingIsMarkedAndDoesNotAskForReview(t *testing.T) {
+	session, me, peers := fixture()
+	findings := []store.Finding{{ID: 3, Claim: "A verified claim", Status: "open", Verified: true, AuthorID: "a1"}}
+	text := promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Findings: findings}).Tail())
+	if !strings.Contains(text, "[verified by human]") {
+		t.Fatalf("verification not marked:\n%s", text)
+	}
+	if strings.Contains(text, "No finding has been reviewed") {
+		t.Fatalf("verified finding asked for peer review:\n%s", text)
+	}
+}

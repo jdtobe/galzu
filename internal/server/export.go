@@ -115,6 +115,9 @@ func (v *server) exportSession(w http.ResponseWriter, r *http.Request) {
 		b.WriteString("## Findings\n\n")
 		for _, finding := range findings {
 			fmt.Fprintf(&b, "### Finding #%d · %s\n\n%s\n\n", finding.ID, finding.Status, finding.Claim)
+			if finding.Verified {
+				fmt.Fprintf(&b, "Verified by %s.\n\n", finding.VerifiedBy)
+			}
 			for _, evidence := range finding.Evidence {
 				fmt.Fprintf(&b, "- **%s** · %s: %s\n", evidence.Stance, name(evidence.AuthorID), evidence.Body)
 			}

@@ -14,17 +14,22 @@ import (
 //
 // Spec: docs/superpowers/specs/2026-11-03-findings.md
 type Finding struct {
-	ID        int64             `json:"id"`
-	SessionID string            `json:"session_id"`
-	AuthorID  string            `json:"author_id"`
-	Claim     string            `json:"claim"`
-	Status    string            `json:"status"`
-	CreatedAt time.Time         `json:"created_at"`
-	UpdatedAt time.Time         `json:"updated_at"`
-	Evidence  []FindingEvidence `json:"evidence,omitempty"`
-	Positions []FindingPosition `json:"positions,omitempty"`
-	Revisions []FindingRevision `json:"revisions,omitempty"`
-	Reviews   []FindingReview   `json:"reviews,omitempty"`
+	ID        int64  `json:"id"`
+	SessionID string `json:"session_id"`
+	AuthorID  string `json:"author_id"`
+	Claim     string `json:"claim"`
+	Status    string `json:"status"`
+	// Verified is the human's mark, not agreement and not a guarantee. It is
+	// deliberately separate from positions.
+	Verified   bool              `json:"verified,omitempty"`
+	VerifiedBy string            `json:"verified_by,omitempty"`
+	VerifiedAt time.Time         `json:"verified_at,omitempty"`
+	CreatedAt  time.Time         `json:"created_at"`
+	UpdatedAt  time.Time         `json:"updated_at"`
+	Evidence   []FindingEvidence `json:"evidence,omitempty"`
+	Positions  []FindingPosition `json:"positions,omitempty"`
+	Revisions  []FindingRevision `json:"revisions,omitempty"`
+	Reviews    []FindingReview   `json:"reviews,omitempty"`
 }
 
 type FindingRevision struct {
@@ -76,7 +81,8 @@ func findingsSchema(db *sql.DB) error {
 CREATE TABLE IF NOT EXISTS findings(
   id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, author_id TEXT NOT NULL,
   claim TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
-  created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  verified INTEGER NOT NULL DEFAULT 0, verified_by TEXT NOT NULL DEFAULT '', verified_at TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS finding_revisions(
   id INTEGER PRIMARY KEY AUTOINCREMENT, finding_id INTEGER NOT NULL REFERENCES findings(id),
   author_id TEXT NOT NULL, claim TEXT NOT NULL, created_at TEXT NOT NULL);
@@ -92,7 +98,19 @@ CREATE TABLE IF NOT EXISTS finding_positions(
   finding_id INTEGER NOT NULL REFERENCES findings(id), agent_id TEXT NOT NULL,
   choice TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', at TEXT NOT NULL,
   PRIMARY KEY(finding_id, agent_id));`)
-	return err
+	if err != nil {
+		return err
+	}
+	for _, column := range []string{
+		`ALTER TABLE findings ADD COLUMN verified INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE findings ADD COLUMN verified_by TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE findings ADD COLUMN verified_at TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, alterErr := db.Exec(column); alterErr != nil && !strings.Contains(alterErr.Error(), "duplicate column") {
+			return alterErr
+		}
+	}
+	return nil
 }
 
 // CreateFinding records a claim and its first evidence, if any. The first
@@ -183,7 +201,7 @@ func (s *Store) ReviseFinding(ctx context.Context, sessionID string, findingID i
 // RetractFinding withdraws a claim without erasing it. Evidence and positions
 // stay in the record, because a withdrawn claim is history worth keeping.
 func (s *Store) RetractFinding(ctx context.Context, sessionID string, findingID int64) error {
-	result, err := s.db.ExecContext(ctx, `UPDATE findings SET status='withdrawn',updated_at=? WHERE id=? AND session_id=? AND status='open'`,
+	result, err := s.db.ExecContext(ctx, `UPDATE findings SET status='withdrawn',verified=0,verified_by='',verified_at='',updated_at=? WHERE id=? AND session_id=? AND status='open'`,
 		time.Now().UTC().Format(time.RFC3339Nano), findingID, sessionID)
 	if err != nil {
 		return err
@@ -206,6 +224,28 @@ func (s *Store) RetractFinding(ctx context.Context, sessionID string, findingID 
 		return ErrFindingWithdrawn
 	}
 	return ErrFindingGone
+}
+
+// VerifyFinding records the human's mark on a claim. It is not agreement, and
+// withdrawing a finding clears the mark: a withdrawn claim is not verified.
+func (s *Store) VerifyFinding(ctx context.Context, sessionID string, findingID int64, verified bool, by string) error {
+	value, at, who := 0, "", ""
+	if verified {
+		value, at, who = 1, time.Now().UTC().Format(time.RFC3339Nano), by
+	}
+	result, err := s.db.ExecContext(ctx, `UPDATE findings SET verified=?,verified_at=?,verified_by=? WHERE id=? AND session_id=?`,
+		value, at, who, findingID, sessionID)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return ErrFindingGone
+	}
+	return nil
 }
 
 // EndorseFinding records or replaces one agent's position. It is a position, not
@@ -271,10 +311,10 @@ func (s *Store) Findings(ctx context.Context, sessionID string, limit int) ([]Fi
 
 func (s *Store) finding(ctx context.Context, sessionID string, id int64) (Finding, error) {
 	var f Finding
-	var created, updated string
-	err := s.db.QueryRowContext(ctx, `SELECT id,session_id,author_id,claim,status,created_at,updated_at
+	var created, updated, verifiedAt string
+	err := s.db.QueryRowContext(ctx, `SELECT id,session_id,author_id,claim,status,created_at,updated_at,verified,verified_by,verified_at
 FROM findings WHERE id=? AND session_id=?`, id, sessionID).
-		Scan(&f.ID, &f.SessionID, &f.AuthorID, &f.Claim, &f.Status, &created, &updated)
+		Scan(&f.ID, &f.SessionID, &f.AuthorID, &f.Claim, &f.Status, &created, &updated, &f.Verified, &f.VerifiedBy, &verifiedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Finding{}, ErrFindingGone
 	}
@@ -283,6 +323,9 @@ FROM findings WHERE id=? AND session_id=?`, id, sessionID).
 	}
 	f.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	f.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+	if verifiedAt != "" {
+		f.VerifiedAt, _ = time.Parse(time.RFC3339Nano, verifiedAt)
+	}
 	if f.Evidence, err = s.findingEvidence(ctx, id); err != nil {
 		return Finding{}, err
 	}
@@ -458,7 +501,7 @@ type SharedFinding struct {
 // AllFindings lists findings across sessions, newest update first. Search matches
 // the claim, its evidence, the session name, or the author name.
 func (s *Store) AllFindings(ctx context.Context, search string, limit, offset int) ([]SharedFinding, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT f.id,f.session_id,f.author_id,f.claim,f.status,f.created_at,f.updated_at,
+	rows, err := s.db.QueryContext(ctx, `SELECT f.id,f.session_id,f.author_id,f.claim,f.status,f.created_at,f.updated_at,f.verified,f.verified_by,f.verified_at,
 COALESCE(n.name,''),s.goal,COALESCE(a.name,'')
 FROM findings f
 JOIN sessions s ON s.id=f.session_id
@@ -477,14 +520,17 @@ ORDER BY f.updated_at DESC,f.id DESC LIMIT @limit OFFSET @offset`,
 	out := []SharedFinding{}
 	for rows.Next() {
 		var f SharedFinding
-		var created, updated string
-		if err := rows.Scan(&f.ID, &f.SessionID, &f.AuthorID, &f.Claim, &f.Status, &created, &updated,
+		var created, updated, verifiedAt string
+		if err := rows.Scan(&f.ID, &f.SessionID, &f.AuthorID, &f.Claim, &f.Status, &created, &updated, &f.Verified, &f.VerifiedBy, &verifiedAt,
 			&f.SessionName, &f.SessionGoal, &f.AuthorName); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		f.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 		f.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+		if verifiedAt != "" {
+			f.VerifiedAt, _ = time.Parse(time.RFC3339Nano, verifiedAt)
+		}
 		out = append(out, f)
 	}
 	if err := rows.Close(); err != nil {

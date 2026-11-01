@@ -302,6 +302,8 @@ func turnPacket(in promptInput) string {
 			status := ""
 			if finding.Status == "withdrawn" {
 				status = " [withdrawn]"
+			} else if finding.Verified {
+				status = " [verified by human]"
 			}
 			fmt.Fprintf(&b, "\n%d | %s | %d-%d | %s%s", finding.ID, truncate(finding.Claim, 240), agree, disagree, mine, status)
 			for i, evidence := range finding.Evidence {
@@ -318,7 +320,7 @@ func turnPacket(in promptInput) string {
 		b.WriteString("\nAgreement is not verification. Challenge with evidence, revise with the finding action, and endorse with a reason.")
 		openFindings, reviews := 0, 0
 		for _, finding := range in.Findings {
-			if finding.Status == "withdrawn" {
+			if finding.Status == "withdrawn" || finding.Verified {
 				continue
 			}
 			openFindings++

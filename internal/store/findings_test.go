@@ -309,3 +309,46 @@ func TestSearchFindingsMatchesClaimAndEvidenceAndSkipsWithdrawn(t *testing.T) {
 		t.Fatalf("limit zero: %+v %v", found, err)
 	}
 }
+
+func TestVerifyFindingIsAHumanMarkAndWithdrawalClearsIt(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, Session{ID: "s", Goal: "g", Status: "running", Concurrency: 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	finding, err := s.CreateFinding(ctx, "s", "a", "a claim", "evidence", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.VerifyFinding(ctx, "s", finding.ID, true, "human"); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := s.Finding(ctx, "s", finding.ID)
+	if err != nil || !stored.Verified || stored.VerifiedBy != "human" || stored.VerifiedAt.IsZero() {
+		t.Fatalf("finding = %+v err %v", stored, err)
+	}
+	if err := s.VerifyFinding(ctx, "s", finding.ID, false, "human"); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ = s.Finding(ctx, "s", finding.ID)
+	if stored.Verified || stored.VerifiedBy != "" || !stored.VerifiedAt.IsZero() {
+		t.Fatalf("unverified = %+v", stored)
+	}
+	if err := s.VerifyFinding(ctx, "s", finding.ID, true, "human"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RetractFinding(ctx, "s", finding.ID); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ = s.Finding(ctx, "s", finding.ID)
+	if stored.Verified {
+		t.Fatalf("withdrawn finding stayed verified: %+v", stored)
+	}
+	if err := s.VerifyFinding(ctx, "other", finding.ID, true, "human"); !errors.Is(err, ErrFindingGone) {
+		t.Fatalf("cross-session verify: %v", err)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -520,5 +521,34 @@ func TestDatabaseInfoEndpoint(t *testing.T) {
 	}
 	if info.Path == "" || info.Warning != "" {
 		t.Fatalf("info = %+v", info)
+	}
+}
+
+func TestVerifyFindingEndpoint(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+	if err := s.CreateSession(ctx, store.Session{ID: "s", Goal: "g", Status: "paused", Concurrency: 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	finding, err := s.CreateFinding(ctx, "s", "a", "a claim", "evidence", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := do(t, h, "POST", "/api/sessions/s/findings/"+strconv.FormatInt(finding.ID, 10)+"/verify", `{"verified":true}`); w.Code != 200 {
+		t.Fatalf("%d: %s", w.Code, w.Body.String())
+	}
+	stored, err := s.Finding(ctx, "s", finding.ID)
+	if err != nil || !stored.Verified {
+		t.Fatalf("finding = %+v err %v", stored, err)
+	}
+	if w := do(t, h, "POST", "/api/sessions/s/findings/999/verify", `{"verified":true}`); w.Code != 404 {
+		t.Fatalf("missing finding: %d %s", w.Code, w.Body.String())
 	}
 }
