@@ -30,6 +30,7 @@
       <form id="create" class="setup-form">
         <label>Session name <span class="muted">(optional)</span><input name="name" maxlength="160" placeholder="e.g. Find the imposter"></label>
         <label>What should the group work on?<textarea name="goal" required maxlength="4096" placeholder="A question to explore, a problem to solve, or an idea to challenge…"></textarea></label>
+        <label>Context <span class="muted">(optional)</span><textarea name="brief" maxlength="8192" placeholder="What world is this work in? The product, the codebase, the audience, and the words that mean something specific here."></textarea><span class="field-hint">Carried in every agent's prompt. Without it, the group can only interpret the goal from general knowledge.</span></label>
         <label>Agents<span class="field-hint">One per line: name, role (leader or helper), installed Ollama model. Exactly one leader.</span><textarea name="agents" class="code-input" required>Rowan, leader, lfm3-1.7b-uncensored:q6-k
 Sage, helper, lfm3-1.7b-uncensored:q6-k</textarea></label>
         <div class="form-row"><label>Inference slots<input name="concurrency" type="number" min="1" max="32" value="1" required><span class="field-hint">Maximum concurrent requests in this session.</span></label><label class="thinking-setting"><input type="checkbox" name="thinking"><span>Request model thinking<span class="field-hint">Off by default. Model support varies.</span></span></label></div>
@@ -47,7 +48,7 @@ Sage, helper, lfm3-1.7b-uncensored:q6-k</textarea></label>
       </aside>
 
       <section class="conversation" aria-label="Session conversation">
-        <header class="session-heading"><div class="session-heading-copy"><p class="eyebrow">Session <span id="status" class="status-badge"></span></p><h1 id="session-title"></h1><p id="goal" class="session-goal-full"></p></div><button id="pause" type="button">Pause session</button></header>
+        <header class="session-heading"><div class="session-heading-copy"><p class="eyebrow">Session <span id="status" class="status-badge"></span></p><h1 id="session-title"></h1><p id="goal" class="session-goal-full"></p><p id="brief" class="session-brief" hidden></p></div><button id="pause" type="button">Pause session</button></header>
         <details class="session-settings"><summary>Session details &amp; name</summary><p id="sid" class="code-input"></p><form id="rename-session"><label>Session name<input id="session-name" name="name" maxlength="160" required></label><button>Rename</button><span id="rename-result" role="status"></span></form><p>Completed work is saved automatically. Returning to Sessions does not pause this run. Pause stops new scheduling; it is not a snapshot of unfinished generation.</p></details>
         <div id="service-warning" class="warning-banner" role="status" hidden></div>
         <div id="storage-banner" class="warning-banner" hidden><p id="storage-warning" role="alert"></p><button id="storage-recover" type="button" hidden>Retry storage recovery</button></div>

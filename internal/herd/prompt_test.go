@@ -122,3 +122,23 @@ func TestPromptReuseReportsSharedBytes(t *testing.T) {
 		t.Fatalf("reused %d bytes; longer than the previous prompt (%d)", reused, len(flatten(first.Messages())))
 	}
 }
+
+func TestBriefIsCarriedInThePreamble(t *testing.T) {
+	session, me, peers := fixture()
+	session.Brief = "Galzu runs a herd of local AI agents; here \"herd\" means agents."
+	text := promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers}).Fixed())
+	if !strings.Contains(text, "Goal: ship the release\nBrief: Galzu runs a herd of local AI agents") {
+		t.Fatalf("brief missing or misplaced:\n%s", text)
+	}
+}
+
+func TestEmptyBriefLeavesNoStrayLine(t *testing.T) {
+	session, me, peers := fixture()
+	text := promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers}).Fixed())
+	if strings.Contains(text, "Brief:") {
+		t.Fatalf("unexpected brief line:\n%s", text)
+	}
+	if !strings.Contains(text, "Goal: ship the release\n\nYou are one member") {
+		t.Fatalf("preamble layout changed:\n%s", text)
+	}
+}

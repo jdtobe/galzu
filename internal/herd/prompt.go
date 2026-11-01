@@ -14,7 +14,7 @@ import (
 // preamble and the epoch header, and it is the only record that the layout
 // changed. Nothing stores a version per session, so a bump costs one cold prompt
 // per agent and no migration.
-const promptProtocol = 2
+const promptProtocol = 3
 
 // Prompt budgets in UTF-8 bytes of rendered entries. Compaction happens rarely
 // and drops well past the high-water mark so the prefix survives many turns.
@@ -140,11 +140,19 @@ func renderPrompt(in promptInput) prompt {
 
 // sessionPreamble is shared byte-for-byte by every agent in a session, so
 // switching agents still reuses the beginning of the cache.
+//
+// The brief is the difference between "a herd" the animals and "a herd" this
+// platform. It is carried here rather than in the goal because the goal is what
+// the group should do, and the brief is the world it does it in.
 func sessionPreamble(s store.Session) string {
+	brief := ""
+	if s.Brief != "" {
+		brief = fmt.Sprintf("Brief: %s\n", s.Brief)
+	}
 	return fmt.Sprintf(`GALZU v%d
 Session %s
 Goal: %s
-
+%s
 You are one member of a cooperative herd. Be honest, welcome dissent, and value correctness over popularity. Ask for help when evidence is missing. Private messages are visible to the human operator.
 
 Reply with exactly one JSON object and nothing else:
@@ -158,7 +166,7 @@ Reply with exactly one JSON object and nothing else:
 {"action":"plan","text":"..."} propose the steps, definition of done, and acceptance criteria
 {"action":"rest","text":""} stay quiet
 Add "memory": a JSON string with your updated private working memory, at most 2048 UTF-8 bytes. Preserve evidence sources, uncertainty, disagreement, and unanswered questions; distinguish claims from observations.
-`, promptProtocol, s.ID, s.Goal)
+`, promptProtocol, s.ID, s.Goal, brief)
 }
 
 // entryLine is the permanent rendering of one message. It must stay

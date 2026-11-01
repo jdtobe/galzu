@@ -5,15 +5,20 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
 type Session struct {
-	ID                 string `json:"id"`
-	Name               string `json:"name"`
-	Goal               string `json:"goal"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Goal string `json:"goal"`
+	// Brief is product or domain context carried in the preamble. The goal says
+	// what to do; the brief says what world the work happens in. Without it a
+	// herd resolves the goal's nouns from general knowledge alone.
+	Brief              string `json:"brief,omitempty"`
 	Status             string `json:"status"`
 	Concurrency        int    `json:"concurrency"`
 	TargetIP           string `json:"target_ip,omitempty"`
@@ -63,6 +68,14 @@ func Open(path string) (*Store, error) {
  CREATE TABLE IF NOT EXISTS agents(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id), name TEXT NOT NULL, role TEXT NOT NULL, model TEXT NOT NULL, status TEXT NOT NULL, error TEXT NOT NULL DEFAULT '');
  CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL REFERENCES sessions(id), agent_id TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL REFERENCES sessions(id), kind TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL);`)
+	if err == nil {
+		// Existing databases predate the session brief. There is no migration
+		// framework, so this is the smallest possible one, and it is safe to
+		// repeat: the column already existing is the success case.
+		if _, alterErr := db.Exec(`ALTER TABLE sessions ADD COLUMN brief TEXT NOT NULL DEFAULT ''`); alterErr != nil && !strings.Contains(alterErr.Error(), "duplicate column") {
+			err = alterErr
+		}
+	}
 	if err == nil {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS network_policies(session_id TEXT PRIMARY KEY REFERENCES sessions(id), target_ip TEXT NOT NULL, rate_interval_ms INTEGER NOT NULL)`)
 	}
@@ -277,7 +290,7 @@ func (s *Store) CreateSession(ctx context.Context, v Session, agents []Agent) er
 		return e
 	}
 	defer tx.Rollback()
-	if _, e = tx.ExecContext(ctx, `INSERT INTO sessions VALUES(?,?,?,?)`, v.ID, v.Goal, v.Status, v.Concurrency); e != nil {
+	if _, e = tx.ExecContext(ctx, `INSERT INTO sessions(id,goal,status,concurrency,brief) VALUES(?,?,?,?,?)`, v.ID, v.Goal, v.Status, v.Concurrency, v.Brief); e != nil {
 		return e
 	}
 	if _, e = tx.ExecContext(ctx, `INSERT INTO session_names(session_id,name) VALUES(?,?)`, v.ID, v.Name); e != nil {
@@ -416,7 +429,7 @@ func (s *Store) CompleteRestWithMemory(ctx context.Context, sessionID, agentID s
 func (s *Store) GetSession(ctx context.Context, id string) (Session, []Agent, error) {
 	var v Session
 	var delays string
-	e := s.db.QueryRowContext(ctx, `SELECT s.id,COALESCE(n.name,''),s.goal,s.status,s.concurrency,COALESCE(p.target_ip,''),COALESCE(p.rate_interval_ms,0),COALESCE(i.timeout_ms,600000),COALESCE(i.retry_delays,'[2000,10000,30000]') FROM sessions s LEFT JOIN session_names n ON n.session_id=s.id LEFT JOIN network_policies p ON p.session_id=s.id LEFT JOIN inference_policies i ON i.session_id=s.id WHERE s.id=?`, id).Scan(&v.ID, &v.Name, &v.Goal, &v.Status, &v.Concurrency, &v.TargetIP, &v.RateIntervalMS, &v.InferenceTimeoutMS, &delays)
+	e := s.db.QueryRowContext(ctx, `SELECT s.id,COALESCE(n.name,''),s.goal,s.brief,s.status,s.concurrency,COALESCE(p.target_ip,''),COALESCE(p.rate_interval_ms,0),COALESCE(i.timeout_ms,600000),COALESCE(i.retry_delays,'[2000,10000,30000]') FROM sessions s LEFT JOIN session_names n ON n.session_id=s.id LEFT JOIN network_policies p ON p.session_id=s.id LEFT JOIN inference_policies i ON i.session_id=s.id WHERE s.id=?`, id).Scan(&v.ID, &v.Name, &v.Goal, &v.Brief, &v.Status, &v.Concurrency, &v.TargetIP, &v.RateIntervalMS, &v.InferenceTimeoutMS, &delays)
 	if e != nil {
 		return v, nil, e
 	}

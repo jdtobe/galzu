@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -322,5 +323,42 @@ func TestHerdRespondsToInitialGoal(t *testing.T) {
 	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions/"+created.Session.ID+"/pause", nil))
 	if w.Code != http.StatusOK {
 		t.Fatal(w.Code)
+	}
+}
+
+func TestSessionBriefIsStoredAndBounded(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+
+	body := `{"goal":"pick a feature","brief":"A herd here means agents, not animals.","concurrency":1,"agents":[{"name":"Ada","role":"leader","model":"m"}]}`
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions", bytes.NewBufferString(body)))
+	if w.Code != http.StatusCreated {
+		t.Fatalf("%d: %s", w.Code, w.Body.String())
+	}
+	var created struct {
+		Session store.Session `json:"session"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	saved, _, err := s.GetSession(ctx, created.Session.ID)
+	if err != nil || !strings.Contains(saved.Brief, "not animals") {
+		t.Fatalf("brief = %q, err %v", saved.Brief, err)
+	}
+
+	long := strings.Repeat("x", 8193)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions", bytes.NewBufferString(
+		`{"goal":"test","brief":"`+long+`","concurrency":1,"agents":[{"name":"Ada","role":"leader","model":"m"}]}`)))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("oversized brief accepted: %d", w.Code)
 	}
 }

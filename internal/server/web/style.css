@@ -131,6 +131,7 @@ summary { cursor: pointer; }
 .session-heading .eyebrow { display: flex; align-items: center; gap: 9px; }
 .session-heading button { white-space: nowrap; margin-top: 17px; }
 .session-goal-full { font-size: 12px; color: var(--color-muted); margin: 0; max-height: 80px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.session-brief { font-size: 12px; color: var(--color-muted); margin: 4px 0 0; max-height: 60px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-left: 2px solid var(--color-border); padding-left: 8px; }
 .session-settings { margin: 0 30px 15px; font-size: 10px; color: var(--color-muted); }
 .session-settings[open] { max-height: 25vh; overflow-y: auto; flex-shrink: 0; }
 .session-settings > p { margin: 12px 0; }

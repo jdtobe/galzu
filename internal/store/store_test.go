@@ -202,3 +202,33 @@ func TestPersistence(t *testing.T) {
 		t.Fatalf("%+v %v", e, err)
 	}
 }
+
+func TestSessionBriefRoundTripsAndSurvivesReopen(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	brief := "Galzu is a platform for running a herd of local AI agents. A herd is a group of agents, not livestock."
+	if err = s.CreateSession(ctx, Session{ID: "s", Goal: "pick a feature", Brief: brief, Status: "paused", Concurrency: 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, _, err := s.GetSession(ctx, "s")
+	if err != nil || saved.Brief != brief {
+		t.Fatalf("brief = %q, err %v", saved.Brief, err)
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	// Reopening runs the ALTER again; a duplicate column must not be an error.
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	saved, _, err = s.GetSession(ctx, "s")
+	if err != nil || saved.Brief != brief {
+		t.Fatalf("after reopen brief = %q, err %v", saved.Brief, err)
+	}
+}

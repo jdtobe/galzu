@@ -176,6 +176,8 @@ async function refresh() {
   $('session-title').textContent = title;
   document.title = `${title} · Galzu`;
   $('goal').textContent = data.session.goal;
+  $('brief').textContent = data.session.brief || '';
+  $('brief').hidden = !data.session.brief;
   if (document.activeElement !== $('session-name') && $('session-name').dataset.session !== current) {
     $('session-name').value = data.session.name || '';
     $('session-name').dataset.session = current;
@@ -463,7 +465,7 @@ $('create').onsubmit = async event => {
   try {
     const f = new FormData(form);
     const agents = f.get('agents').split('\n').filter(x=>x.trim()).map(line=>{ const [name,role,model] = line.split(',').map(x=>x.trim()); return {name,role,model}; });
-    const result = await api('/api/sessions',post({name:f.get('name'),goal:f.get('goal'),concurrency:Number(f.get('concurrency')),thinking:f.has('thinking'),inference_timeout_ms:Number(f.get('inference_timeout_ms')),retry_delays_ms:f.get('retry_delays_ms').trim() ? f.get('retry_delays_ms').split(',').map(x=>Number(x.trim())) : [],agents,target_ip:f.get('target_ip').trim(),rate_interval_ms:Number(f.get('rate_interval_ms'))}));
+    const result = await api('/api/sessions',post({name:f.get('name'),goal:f.get('goal'),brief:f.get('brief'),concurrency:Number(f.get('concurrency')),thinking:f.has('thinking'),inference_timeout_ms:Number(f.get('inference_timeout_ms')),retry_delays_ms:f.get('retry_delays_ms').trim() ? f.get('retry_delays_ms').split(',').map(x=>Number(x.trim())) : [],agents,target_ip:f.get('target_ip').trim(),rate_interval_ms:Number(f.get('rate_interval_ms'))}));
     await openSession(result.session.id);
   } catch(error) { report(error); }
   finally { button.disabled = false; }

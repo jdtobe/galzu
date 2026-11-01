@@ -149,6 +149,7 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Name               string `json:"name"`
 		Goal               string `json:"goal"`
+		Brief              string `json:"brief"`
 		Concurrency        int    `json:"concurrency"`
 		Thinking           bool   `json:"thinking"`
 		TargetIP           string `json:"target_ip"`
@@ -172,6 +173,11 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 	input.Name = strings.TrimSpace(input.Name)
 	if len(input.Name) > 160 {
 		http.Error(w, "session name must be at most 160 UTF-8 bytes", 400)
+		return
+	}
+	input.Brief = strings.TrimSpace(input.Brief)
+	if len(input.Brief) > 8192 {
+		http.Error(w, "session brief must be at most 8192 UTF-8 bytes", 400)
 		return
 	}
 	if input.InferenceTimeoutMS == 0 {
@@ -219,7 +225,7 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 		failure(w, e)
 		return
 	}
-	s := store.Session{ID: sid, Name: input.Name, Goal: input.Goal, Concurrency: input.Concurrency, Status: "running", TargetIP: input.TargetIP, RateIntervalMS: input.RateIntervalMS, InferenceTimeoutMS: input.InferenceTimeoutMS, RetryDelaysMS: input.RetryDelaysMS}
+	s := store.Session{ID: sid, Name: input.Name, Goal: input.Goal, Brief: input.Brief, Concurrency: input.Concurrency, Status: "running", TargetIP: input.TargetIP, RateIntervalMS: input.RateIntervalMS, InferenceTimeoutMS: input.InferenceTimeoutMS, RetryDelaysMS: input.RetryDelaysMS}
 	agents := make([]store.Agent, 0, len(input.Agents))
 	for _, a := range input.Agents {
 		aid, e := id()
