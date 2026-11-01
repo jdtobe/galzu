@@ -290,7 +290,7 @@ func turnPacket(in promptInput) string {
 	case in.Plan == nil:
 		b.WriteString("\nPlan: none. Propose one with the plan action: steps, definition of done, acceptance criteria.")
 	case in.Plan.Status == "approved":
-		fmt.Fprintf(&b, "\nPlan (approved v%d): %s", in.Plan.Version, in.Plan.Body)
+		fmt.Fprintf(&b, "\nPlan (approved v%d, the working plan): %s\nDo not propose a replacement unless the human asks for one or you have found a specific defect. If you do propose one, say what changed and why.", in.Plan.Version, in.Plan.Body)
 	default:
 		fmt.Fprintf(&b, "\nPlan: pending review (v%d). Not agreed yet; do not treat it as authoritative, and do not propose another while this one waits.\n%s", in.Plan.Version, in.Plan.Body)
 	}
