@@ -1,48 +1,59 @@
-let current = '', stream, status = '';
-let refreshSequence = 0;
-let currentAgents = [];
+let current = '', stream, status = '', snapshot;
+let refreshSequence = 0, navigationSequence = 0, librarySequence = 0, libraryPage = 0;
+let currentAgents = [], selectedAgent = '', messageFilter = 'all', messageSignature = '';
+let seenLastMessage = 0;
 const $ = id => document.getElementById(id);
-const drafts = new Map();
-let libraryPage = 0, librarySequence = 0, navigationSequence = 0;
-const library = document.createElement('section');
-library.id = 'library';
-library.innerHTML = `<div class="heading"><h2>Sessions</h2><button id="new-session" type="button">New session</button></div>
-  <p>Runs are saved automatically on this computer. Opening a run does not resume it.</p>
-  <p>Leaving a running session does not pause it. Pause it before leaving if you want it to stop scheduling turns.</p>
-  <div id="session-list" aria-live="polite"></div>
-  <div class="library-actions"><button id="sessions-previous" type="button">Previous</button><span id="sessions-page"></span><button id="sessions-next" type="button">Next</button><button id="sessions-refresh" type="button">Refresh</button></div>`;
-$('setup').before(library);
-$('setup').hidden = true;
-const nav = document.createElement('button');
-nav.type = 'button'; nav.textContent = 'Sessions'; nav.onclick = () => showLibrary().catch(report);
-document.querySelector('header').append(nav);
-const nameLabel = document.createElement('label');
-nameLabel.textContent = 'Session name (optional)';
-const nameInput = document.createElement('input');
-nameInput.name = 'name'; nameInput.maxLength = 160;
-nameLabel.append(nameInput); $('create').prepend(nameLabel);
-const rename = document.createElement('form');
-rename.id = 'rename-session';
-rename.innerHTML = '<label>Session name<input id="session-name" name="name" maxlength="160" required></label><button>Rename</button><span id="rename-result" role="status"></span>';
-$('sid').after(rename);
-rename.onsubmit = async event => {
-  event.preventDefault();
+const drafts = new Map(), pendingControls = new Set();
+const library = $('library');
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
+function avatar(name, index = 0, human = false) {
+  const icon = element('div', `avatar ${human ? 'human' : `tone-${index % 5}`}`, Array.from(name || '?').slice(0,2).join('').toUpperCase());
+  icon.setAttribute('aria-hidden','true');
+  return icon;
+}
+function timeLabel(value, full = false) {
+  const date = new Date(value);
+  if (!value || Number.isNaN(date.getTime())) return 'Unknown';
+  return full ? date.toLocaleString() : date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+function badge(value) { return element('span', `status-badge ${value === 'running' ? 'running' : ''}`, value); }
+function post(body) { return {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}; }
+async function api(path, options) {
+  const response = await fetch(path, options);
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+function clearError() { $('error').hidden = true; $('error').textContent = ''; }
+function report(error) {
+  $('error').textContent = error.message; $('error').hidden = false;
+  if (current) checkStorage().catch(() => {});
+}
+async function checkStorage() {
   const id = current;
-  try {
-    const result = await api(`/api/sessions/${encodeURIComponent(id)}/name`, post({name:$('session-name').value}));
-    if (current === id) { $('session-name').value = result.name; $('rename-result').textContent = 'Name saved'; }
-  } catch (error) { report(error); }
-};
+  const state = await api(`/api/sessions/${encodeURIComponent(id)}/storage`);
+  if (id !== current) return;
+  $('storage-warning').textContent = state.error;
+  $('storage-banner').hidden = !state.error;
+  $('storage-recover').hidden = !state.error;
+}
 function leaveSession() {
   ++navigationSequence;
   if (current) drafts.set(current, {body:$('send').elements.body.value, recipient:$('recipient').value});
   if (stream) stream.close();
-  stream = null; current = ''; ++refreshSequence;
+  stream = null; current = ''; snapshot = null; ++refreshSequence;
   $('session').hidden = true;
-  $('error').textContent = '';
+  $('session').classList.remove('inspector-open');
+  clearError();
 }
 async function showLibrary() {
   leaveSession(); $('setup').hidden = true; library.hidden = false;
+  document.title = 'Garth · Sessions';
   await refreshLibrary();
 }
 async function refreshLibrary() {
@@ -50,227 +61,332 @@ async function refreshLibrary() {
   const result = await api(`/api/sessions?offset=${libraryPage * 50}`);
   if (sequence !== librarySequence || library.hidden) return;
   const list = $('session-list'); list.replaceChildren();
-  if (!result.sessions.length) list.textContent = libraryPage ? 'No sessions on this page. Go back or refresh.' : 'No saved sessions yet. Create your first run.';
+  if (!result.sessions.length) list.append(element('p','empty-state',libraryPage ? 'No sessions on this page. Go back or refresh.' : 'No experiments yet. Start a session to bring your group together.'));
   for (const entry of result.sessions) {
-    const card = document.createElement('article'); card.className = 'session-card';
-    const title = document.createElement('h3'); title.textContent = entry.name || entry.goal.slice(0,80);
-    const goal = document.createElement('p'); goal.className = 'session-goal'; goal.textContent = entry.goal;
-    const meta = document.createElement('p'); meta.className = 'agent-meta';
-    meta.textContent = `${entry.status} · ${entry.agent_count} ${entry.agent_count === 1 ? 'agent' : 'agents'} · Last activity: ${entry.last_activity ? new Date(entry.last_activity).toLocaleString() : 'unknown'}`;
-    const open = document.createElement('button'); open.type = 'button'; open.textContent = 'Open';
-    open.onclick = async () => { open.disabled = true; try { await openSession(entry.id); } catch(error) { report(error); } finally { open.disabled = false; } };
-    card.append(title,goal,meta,open); list.append(card);
+    const card = element('article','session-card');
+    const top = element('div','card-top');
+    top.append(badge(entry.status),element('span','',`${entry.agent_count} ${entry.agent_count === 1 ? 'agent' : 'agents'}`));
+    const title = element('h3','',entry.name || entry.goal.slice(0,80));
+    const goal = element('p','session-goal',entry.goal);
+    const meta = element('p','card-meta',`Last activity · ${timeLabel(entry.last_activity,true)}`);
+    const open = element('button','', 'Open session →'); open.type = 'button';
+    open.onclick = async () => {
+      open.disabled = true;
+      try { await openSession(entry.id); } catch(error) { report(error); } finally { open.disabled = false; }
+    };
+    card.append(top,title,goal,meta,open); list.append(card);
   }
   $('sessions-page').textContent = `Page ${libraryPage + 1}`;
   $('sessions-previous').disabled = libraryPage === 0;
   $('sessions-next').disabled = !result.more;
 }
-$('sessions-previous').onclick = () => { libraryPage = Math.max(0,libraryPage-1); refreshLibrary().catch(report); };
-$('sessions-next').onclick = () => { ++libraryPage; refreshLibrary().catch(report); };
-$('sessions-refresh').onclick = () => { libraryPage = 0; refreshLibrary().catch(report); };
-$('new-session').onclick = () => { leaveSession(); library.hidden = true; $('setup').hidden = false; };
-async function api(path, options) {
-  const response = await fetch(path, options);
-  if (!response.ok) throw new Error(await response.text());
-  return response.json();
-}
-function report(error) { $('error').textContent = error.message; if (current) checkStorage().catch(() => {}); }
-async function checkStorage() {
-  const id = current;
-  const state = await api(`/api/sessions/${encodeURIComponent(id)}/storage`);
-  if (id !== current) return;
-  $('storage-warning').textContent = state.error;
-  $('storage-recover').hidden = !state.error;
-}
-function post(body) { return {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}; }
 
 async function refresh() {
+  if (!current) return;
   const id = current, sequence = ++refreshSequence;
   const data = await api(`/api/sessions/${encodeURIComponent(id)}`);
   if (id !== current || sequence !== refreshSequence) return;
   await checkStorage();
   if (id !== current || sequence !== refreshSequence) return;
+  snapshot = data;
   status = data.session.status;
   currentAgents = data.agents || [];
+  const title = data.session.name || data.session.goal.slice(0,80);
+  $('session-title').textContent = title;
+  document.title = `${title} · Garth`;
   $('goal').textContent = data.session.goal;
   if (document.activeElement !== $('session-name') && $('session-name').dataset.session !== current) {
     $('session-name').value = data.session.name || '';
     $('session-name').dataset.session = current;
   }
   $('sid').textContent = `Session ID: ${current}`;
-  $('status').textContent = `Session: ${status}`;
-  const serviceErrors = Object.entries(data.recoveries || {}).filter(([id, recovery]) => recovery.category === 'inference' && currentAgents.some(a => a.id === id)).length;
-  if (serviceErrors >= 2) $('status').textContent += ' · Multiple agents are experiencing inference-service errors';
-  $('pause').textContent = status === 'paused' ? 'Resume herd' : 'Pause herd';
-  const openDiagnostics = new Set([...$('agents').querySelectorAll('details[open]')].map(node => node.dataset.key));
-  $('agents').replaceChildren();
-  const recipients = $('recipient');
-  const selectedRecipient = recipients.value;
-  recipients.replaceChildren(new Option('Everyone', ''));
-  const names = {};
-  for (const agent of data.agents || []) {
-    names[agent.id] = agent.name;
-    recipients.add(new Option(`${agent.name} (${agent.role})`, agent.id));
-    const li = document.createElement('li');
-    const heading = document.createElement('strong');
-    heading.textContent = agent.name;
-    const description = document.createElement('div');
-    description.className = 'agent-meta';
-    const activity = (data.activity || {})[agent.id];
-    description.textContent = `${agent.role} · ${agent.model} · ${agent.status === 'error' ? 'error' : (activity?.state || 'idle')}${agent.error ? ' — ' + agent.error : ''}`;
-    if (activity) description.textContent += ` · queue ${activity.queue_ms} ms · inference ${activity.inference_ms} ms · prompt ${activity.prompt_bytes} bytes`;
-    if (activity?.last_outcome) description.textContent += ` · last turn ${activity.last_outcome} at ${activity.completed_at}`;
-    const recovery = (data.recoveries || {})[agent.id];
-    if (recovery) description.textContent += ` · failed attempts ${recovery.failures} · ${recovery.reason}`;
-    const label = document.createElement('label');
-    label.className = 'thinking-setting';
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.checked = agent.thinking;
-    checkbox.onchange = async () => {
-      checkbox.disabled = true;
-      try { await api(`/api/sessions/${encodeURIComponent(current)}/agents/${encodeURIComponent(agent.id)}/settings`, post({thinking:checkbox.checked})); }
-      catch (error) { checkbox.checked = !checkbox.checked; report(error); }
-      finally { checkbox.disabled = false; }
-    };
-    label.append(checkbox, document.createTextNode(' Request model thinking (if supported)'));
-    li.append(heading, description, label);
-    if (agent.status === 'error' || activity?.state === 'retrying') {
-      const retry = document.createElement('button');
-      retry.type = 'button';
-      retry.textContent = activity?.state === 'retrying' ? 'Retry now' : 'Retry agent';
-      retry.onclick = async () => {
-        retry.disabled = true;
-        try { await api(`/api/sessions/${encodeURIComponent(current)}/agents/${encodeURIComponent(agent.id)}/retry`, post({})); await refresh(); }
-        catch (error) { report(error); retry.disabled = false; }
-      };
-      li.append(retry);
-    }
-    const failures = (data.failures || []).filter(f => f.agent_id === agent.id);
-    if (failures.length) {
-      const details = document.createElement('details');
-      details.dataset.key = `failures-${agent.id}`;
-      details.open = openDiagnostics.has(details.dataset.key);
-      const summary = document.createElement('summary');
-      summary.textContent = `Failure history (${failures.length})`;
-      details.append(summary);
-      for (const [index, failure] of failures.entries()) {
-        const line = document.createElement('p');
-        line.textContent = `${failure.created_at} · attempt ${failure.attempt} · ${failure.category}: ${failure.reason}`;
-        details.append(line);
-        if (failure.excerpt) {
-          const excerpt = document.createElement('details');
-          excerpt.dataset.key = `failure-${agent.id}-${index}`;
-          excerpt.open = openDiagnostics.has(excerpt.dataset.key);
-          const label = document.createElement('summary'); label.textContent = 'Rejected output (untrusted; may contain private data)';
-          const content = document.createElement('pre'); content.textContent = failure.excerpt;
-          excerpt.append(label, content); details.append(excerpt);
-        }
-      }
-      li.append(details);
-    }
-    $('agents').append(li);
-  }
+  $('status').textContent = status;
+  $('status').className = `status-badge ${status === 'running' ? 'running' : ''}`;
+  $('pause').textContent = status === 'paused' ? 'Resume session' : 'Pause session';
+  const serviceErrors = Object.values(data.recoveries || {}).filter(r => r.category === 'inference').length;
+  $('service-warning').hidden = serviceErrors < 2;
+  $('service-warning').textContent = `${serviceErrors} agents are experiencing inference-service errors. Select an agent to inspect recovery details.`;
+  if (!currentAgents.some(a => a.id === selectedAgent)) selectedAgent = (currentAgents.find(a => a.role === 'leader') || currentAgents[0])?.id || '';
+  renderRoster(); renderAgentDetail();
+  const recipients = $('recipient'), selectedRecipient = recipients.value;
+  recipients.replaceChildren(new Option('Everyone',''));
+  for (const agent of currentAgents) recipients.add(new Option(`${agent.name} (${agent.role})`,agent.id));
   recipients.value = [...recipients.options].some(option => option.value === selectedRecipient) ? selectedRecipient : '';
   updateRecipientWarning();
-  const container = $('messages');
-  const follow = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
-  const previousScroll = container.scrollTop;
-  const openThoughts = new Set([...container.querySelectorAll('details[open]')].map(node => node.dataset.id));
-  container.replaceChildren();
-  for (const message of data.messages || []) {
-    const item = document.createElement('article');
-    item.className = 'chat-message';
-    const header = document.createElement('div');
-    header.className = 'message-header';
-    header.textContent = names[message.agent_id] || 'You';
-    if (message.recipient_id) header.textContent += ` → ${names[message.recipient_id] || message.recipient_id} · private`;
-    if (message.kind === 'help') header.textContent += ' · help request';
-    item.append(header);
-    if (message.thinking) {
-      const thought = document.createElement('details');
-      thought.className = 'thought';
-      thought.dataset.id = message.id;
-      thought.open = openThoughts.has(String(message.id));
-      const summary = document.createElement('summary');
-      summary.textContent = 'Model thinking';
-      const content = document.createElement('p');
-      content.textContent = message.thinking;
-      thought.append(summary, content);
-      item.append(thought);
-    }
-    const body = document.createElement('p');
-    body.className = 'message-body';
-    body.textContent = message.body;
-    item.append(body);
-    if (!message.agent_id) {
-      const targets = currentAgents.filter(agent => !message.recipient_id || agent.id === message.recipient_id);
-      const groups = {processed: [], pending: [], 'needs attention': [], unknown: []};
-      for (const agent of targets) {
-        const progress = (data.delivery || {})[agent.id];
-        let state;
-        if (!progress || message.id <= progress.baseline) state = 'unknown';
-        else if (progress.checkpoint != null && progress.checkpoint >= message.id) state = 'processed';
-        else if (agent.status === 'error') state = 'needs attention';
-        else state = 'pending';
-        groups[state].push(agent.name);
-      }
-      const delivery = document.createElement('small');
-      delivery.textContent = Object.entries(groups).filter(([, names]) => names.length).map(([state, names]) => `${state}: ${names.join(', ')}`).join(' · ');
-      delivery.title = 'Processed means included in a completed turn, not necessarily understood or answered.';
-      item.append(delivery);
-    }
-    container.append(item);
+  const activity = data.activity || {};
+  const active = currentAgents.filter(a => activity[a.id]?.state === 'inference');
+  const queued = currentAgents.filter(a => activity[a.id]?.state === 'queued').length;
+  $('slot-count').textContent = `${active.length} of ${data.session.concurrency} inference slots active`;
+  $('slots').replaceChildren();
+  for (let i = 0; i < data.session.concurrency; ++i) $('slots').append(element('i',i < active.length ? 'on' : ''));
+  const resting = currentAgents.filter(a => GarthUI.agentState(a,activity[a.id]).label === 'Resting').length;
+  $('queue-count').textContent = `${queued} queued · ${resting} resting`;
+  $('inference-note').textContent = active.length ? `${active.slice(0,3).map(a => a.name).join(', ')}${active.length > 3 ? ` + ${active.length-3} more` : ''} ${active.length === 1 ? 'is' : 'are'} in inference${status === 'paused' ? ' · session paused' : ''}` : status === 'paused' ? 'Session paused · pending messages are preserved' : 'No requests currently in inference';
+  renderMessages();
+}
+
+function renderRoster() {
+  const focused = document.activeElement?.dataset.agent;
+  const scroll = $('agents').scrollTop;
+  $('agent-count').textContent = currentAgents.length;
+  $('agents').replaceChildren();
+  currentAgents.forEach((agent,index) => {
+    const li = element('li'), button = element('button','agent-button');
+    const state = GarthUI.agentState(agent,snapshot.activity?.[agent.id],status === 'paused');
+    button.type = 'button'; button.dataset.agent = agent.id;
+    button.setAttribute('aria-pressed',String(agent.id === selectedAgent));
+    button.setAttribute('aria-controls','agent-detail');
+    const copy = element('span','agent-copy');
+    copy.append(element('strong','',agent.name),element('span','agent-role',agent.role),element('div',`agent-state ${state.tone}`,state.label));
+    button.append(avatar(agent.name,index),copy);
+    button.onclick = () => selectAgent(agent.id);
+    li.append(button); $('agents').append(li);
+    if (focused === agent.id) button.focus({preventScroll:true});
+  });
+  $('agents').scrollTop = scroll;
+}
+function selectAgent(id) {
+  selectedAgent = id;
+  renderRoster(); renderAgentDetail();
+  $('agent-detail').parentElement.scrollTop = 0;
+  $('session').classList.add('inspector-open');
+  if (matchMedia('(max-width: 1150px)').matches) $('close-inspector').focus();
+}
+function definition(list,term,value) { list.append(element('dt','',term),element('dd','',value)); }
+function details(label,key,openKeys) {
+  const node = element('details'); node.dataset.key = key; node.open = openKeys.has(key);
+  node.append(element('summary','',label)); return node;
+}
+function renderAgentDetail() {
+  const panel = $('agent-detail');
+  const openKeys = new Set([...panel.querySelectorAll('details[open]')].map(n=>n.dataset.key));
+  const scroll = panel.parentElement.scrollTop;
+  // Preserve keyboard focus across activity updates, along with expanded diagnostics.
+  const focusKey = panel.contains(document.activeElement) ? document.activeElement.dataset.control : null;
+  panel.replaceChildren();
+  const agent = currentAgents.find(a => a.id === selectedAgent);
+  if (!agent) { panel.append(element('p','muted','Select an agent to inspect its activity and settings.')); return; }
+  const sid = current, aid = agent.id, index = currentAgents.indexOf(agent);
+  const activity = snapshot.activity?.[aid], recovery = snapshot.recoveries?.[aid];
+  const state = GarthUI.agentState(agent,activity,status === 'paused');
+  const icon = avatar(agent.name,index); icon.classList.add('detail-avatar');
+  panel.append(icon,element('h2','',agent.name),element('p','detail-role',`${agent.role} · ${state.label}`));
+  const overview = element('section','detail-section'), info = element('dl');
+  definition(info,'Model',agent.model);
+  definition(info,'Agent ID',aid);
+  definition(info,'Last completed turn',activity?.last_outcome ? `${activity.last_outcome === 'rested' ? 'Rested' : 'Responded'} · ${timeLabel(activity.completed_at,true)}` : 'No completed turn recorded since server start');
+  if (agent.error) definition(info,'Error',agent.error);
+  overview.append(info); panel.append(overview);
+  const controls = element('section','detail-section');
+  controls.append(element('h3','','Agent controls'));
+  const label = element('label','thinking-setting'), checkbox = element('input');
+  const thinkingKey = `${sid}:${aid}:thinking`;
+  checkbox.type = 'checkbox'; checkbox.checked = agent.thinking;
+  checkbox.dataset.control = 'thinking'; checkbox.disabled = pendingControls.has(thinkingKey);
+  checkbox.onchange = async () => {
+    pendingControls.add(thinkingKey); checkbox.disabled = true;
+    try {
+      await api(`/api/sessions/${encodeURIComponent(sid)}/agents/${encodeURIComponent(aid)}/settings`,post({thinking:checkbox.checked}));
+      if (current === sid) await refresh();
+    } catch(error) { checkbox.checked = !checkbox.checked; report(error); }
+    finally { pendingControls.delete(thinkingKey); if (current === sid) renderAgentDetail(); }
+  };
+  label.append(checkbox,document.createTextNode('Request model thinking (if supported)')); controls.append(label);
+  const actions = element('div','detail-actions'), message = element('button','','Message privately');
+  message.type = 'button'; message.dataset.control = 'message';
+  message.onclick = () => {
+    $('recipient').value = aid; updateRecipientWarning();
+    $('session').classList.remove('inspector-open'); $('message-body').focus();
+  };
+  actions.append(message);
+  if (agent.status === 'error' || activity?.state === 'retrying') {
+    const retry = element('button','',activity?.state === 'retrying' ? 'Retry now' : 'Retry agent');
+    const retryKey = `${sid}:${aid}:retry`;
+    retry.type = 'button'; retry.dataset.control = 'retry'; retry.disabled = pendingControls.has(retryKey);
+    retry.onclick = async () => {
+      pendingControls.add(retryKey); retry.disabled = true;
+      try { await api(`/api/sessions/${encodeURIComponent(sid)}/agents/${encodeURIComponent(aid)}/retry`,post({})); if (current === sid) await refresh(); }
+      catch(error) { report(error); }
+      finally { pendingControls.delete(retryKey); if (current === sid) renderAgentDetail(); }
+    };
+    actions.append(retry);
   }
-  if (follow) container.scrollTop = container.scrollHeight;
-  else container.scrollTop = previousScroll;
+  controls.append(actions); panel.append(controls);
+  const diagnosticSection = element('section','detail-section');
+  const diagnostic = details('Timing & prompt diagnostics',`diagnostics-${aid}`,openKeys), timings = element('dl');
+  if (activity) {
+    definition(timings,'Harness queue',activity.state === 'queued' ? 'Waiting for a slot' : GarthUI.duration(activity.queue_ms));
+    definition(timings,'Inference request',activity.state === 'inference' ? 'In progress · duration available after completion' : GarthUI.duration(activity.inference_ms));
+    definition(timings,'Prompt size',`${activity.prompt_bytes.toLocaleString()} bytes`);
+  } else definition(timings,'Activity','No timing recorded since server start');
+  diagnostic.append(timings,element('p','','Request time includes any Ollama queueing. Prompt size is UTF-8 bytes, not tokens. Timings reset on server restart.'));
+  diagnosticSection.append(diagnostic);
+  if (recovery) {
+    const info = element('dl');
+    definition(info,'Failed attempts',recovery.failures);
+    definition(info,'Category',recovery.category);
+    definition(info,'Reason',recovery.reason);
+    if (recovery.next_at && !recovery.next_at.startsWith('0001-')) definition(info,'Next automatic retry',timeLabel(recovery.next_at,true));
+    diagnosticSection.append(info);
+  }
+  const failures = (snapshot.failures || []).filter(f=>f.agent_id === aid);
+  const history = details(`Failure history (${failures.length})`,`failures-${aid}`,openKeys);
+  if (!failures.length) history.append(element('p','','No recorded failures.'));
+  failures.forEach((failure,index) => {
+    const record = element('div','failure-record');
+    record.append(element('p','',`${timeLabel(failure.created_at,true)} · attempt ${failure.attempt} · ${failure.category}`),element('p','',failure.reason));
+    if (failure.excerpt) {
+      const excerpt = details('Rejected output · untrusted; may contain private data',`excerpt-${aid}-${index}`,openKeys);
+      excerpt.append(element('pre','',failure.excerpt)); record.append(excerpt);
+    }
+    history.append(record);
+  });
+  diagnosticSection.append(history); panel.append(diagnosticSection);
+  const memory = element('div','memory-note','Private working memory');
+  memory.append(element('p','','Agent-generated summaries can lose or distort evidence. Their contents are not shared with other agents automatically.'));
+  panel.append(memory);
+  if (focusKey) panel.querySelector(`[data-control="${focusKey}"]`)?.focus({preventScroll:true});
+  panel.parentElement.scrollTop = scroll;
+}
+
+function renderMessages(force = false) {
+  if (!snapshot) return;
+  const messages = snapshot.messages || [];
+  const visible = messages.filter(m=>GarthUI.visibleMessage(m,messageFilter));
+  // Messages are immutable: activity-only updates need not rebuild the whole thread.
+  const signature = `${messageFilter}:${visible.length}:${visible.at(-1)?.id}:${JSON.stringify(snapshot.delivery)}:${currentAgents.map(a=>a.status).join(',')}`;
+  if (!force && signature === messageSignature) return;
+  messageSignature = signature;
+  const container = $('messages'), follow = container.scrollHeight - container.scrollTop - container.clientHeight < 48;
+  const previousScroll = container.scrollTop;
+  const openThoughts = new Set([...container.querySelectorAll('details[open]')].map(n=>n.dataset.key));
+  const names = new Map(currentAgents.map(a=>[a.id,a.name]));
+  const indices = new Map(currentAgents.map((a,i)=>[a.id,i]));
+  container.replaceChildren();
+  $('message-count').textContent = `${visible.length} ${visible.length === 1 ? 'message' : 'messages'}`;
+  if (!visible.length) container.append(element('p','empty-state',messageFilter === 'direct' ? 'No direct messages yet. Choose an agent in the composer to write privately.' : 'No messages here yet. Start the conversation below.'));
+  let previousDay = '';
+  for (const message of visible) {
+    const date = new Date(message.created_at), day = date.toLocaleDateString();
+    if (day !== previousDay) { container.append(element('p','day-divider',day)); previousDay = day; }
+    const human = !message.agent_id, sender = human ? 'You' : names.get(message.agent_id) || 'Unknown agent';
+    const item = element('article',`chat-message${message.recipient_id ? ' private' : ''}`);
+    const content = element('div','message-content'), header = element('div','message-header');
+    header.append(element('strong','',message.recipient_id ? `${sender} → ${names.get(message.recipient_id) || message.recipient_id}` : sender));
+    if (message.recipient_id) header.append(element('span','message-label','Private · operator visible'));
+    else if (human) header.append(element('span','message-label','Everyone'));
+    if (message.kind === 'help') header.append(element('span','message-label','Help request'));
+    const timestamp = element('time','',timeLabel(message.created_at)); timestamp.dateTime = message.created_at; timestamp.title = timeLabel(message.created_at,true); header.append(timestamp);
+    content.append(header,element('p','message-body',message.body));
+    if (message.thinking) {
+      const thought = details('Model thinking',`thought-${message.id}`,openThoughts); thought.className = 'thought';
+      thought.append(element('p','',message.thinking)); content.append(thought);
+    }
+    if (human) {
+      const groups = {processed:[],pending:[],'needs attention':[],unknown:[]};
+      for (const agent of currentAgents.filter(a=>!message.recipient_id || a.id === message.recipient_id)) groups[GarthUI.deliveryState(message,agent,snapshot.delivery?.[agent.id])].push(agent.name);
+      const progress = details(Object.entries(groups).filter(([,names])=>names.length).map(([state,names])=>`${names.length} ${state}`).join(' · ') || 'No recipients',`delivery-${message.id}`,openThoughts);
+      progress.className = 'delivery'; progress.title = 'Processed means included in a completed turn, not necessarily understood or answered.';
+      for (const [state,names] of Object.entries(groups)) if (names.length) progress.append(element('p','',`${state}: ${names.join(', ')}`));
+      content.append(progress);
+    }
+    item.append(avatar(sender,indices.get(message.agent_id) || 0,human),content); container.append(item);
+  }
+  const last = visible.at(-1)?.id || 0;
+  if (follow || force) { container.scrollTop = container.scrollHeight; $('jump-latest').hidden = true; }
+  else { container.scrollTop = previousScroll; if (last > seenLastMessage) $('jump-latest').hidden = false; }
+  seenLastMessage = last;
 }
 function updateRecipientWarning() {
   const recipient = $('recipient').value;
-  const failed = currentAgents.filter(a => a.status === 'error' && (!recipient || a.id === recipient));
-  $('recipient-warning').textContent = failed.length ? `Needs attention: ${failed.map(a => a.name).join(', ')}. Messages will remain pending until retry.` : '';
+  const failed = currentAgents.filter(a=>a.status === 'error' && (!recipient || a.id === recipient));
+  $('recipient-warning').textContent = failed.length ? `Needs attention: ${failed.map(a=>a.name).join(', ')}. Messages remain pending until recovery.` : '';
+  $('privacy-note').textContent = recipient ? 'Private · visible to the operator' : 'Public to the group';
 }
-$('recipient').onchange = updateRecipientWarning;
 async function openSession(id) {
-  // Validate before leaving the current view; simply opening must never start a run.
   const navigation = ++navigationSequence;
   await api(`/api/sessions/${encodeURIComponent(id)}`);
   if (navigation !== navigationSequence) return;
-  leaveSession();
-  current = id;
+  leaveSession(); current = id; selectedAgent = ''; messageSignature = ''; seenLastMessage = 0;
   const draft = drafts.get(id);
   $('send').elements.body.value = draft?.body || '';
   $('recipient').replaceChildren(new Option('Everyone',''));
   if (draft?.recipient) { $('recipient').add(new Option(draft.recipient,draft.recipient)); $('recipient').value = draft.recipient; }
-  $('rename-result').textContent = '';
-  $('session-name').dataset.session = '';
+  $('rename-result').textContent = ''; $('session-name').dataset.session = '';
+  $('session').querySelector('.session-settings').open = false;
+  // Clear details from the last session so expansion state cannot cross sessions.
+  $('agent-detail').replaceChildren(); $('messages').replaceChildren();
   await refresh();
   if (current !== id) return;
-  library.hidden = true;
-  $('setup').hidden = true;
-  $('session').hidden = false;
+  library.hidden = true; $('setup').hidden = true; $('session').hidden = false;
   $('messages').scrollTop = $('messages').scrollHeight;
   if (stream) stream.close();
   stream = new EventSource(`/api/sessions/${encodeURIComponent(id)}/events`);
-  stream.addEventListener('update', () => { if (current === id) refresh().catch(report); });
-  stream.onopen = () => { if (current === id) refresh().catch(report); };
+  stream.addEventListener('update',()=>{ if (current === id) refresh().catch(report); });
+  stream.onopen = ()=>{ if (current === id) refresh().catch(report); };
 }
-$('create').onsubmit = async e => { e.preventDefault(); try { const f = new FormData(e.target); const agents = f.get('agents').split('\n').filter(x=>x.trim()).map(line=>{ const [name,role,model] = line.split(',').map(x=>x.trim()); return {name,role,model}; }); const result = await api('/api/sessions',post({name:f.get('name'),goal:f.get('goal'),concurrency:Number(f.get('concurrency')),thinking:f.has('thinking'),inference_timeout_ms:Number(f.get('inference_timeout_ms')),retry_delays_ms:f.get('retry_delays_ms').trim() ? f.get('retry_delays_ms').split(',').map(x=>Number(x.trim())) : [],agents,target_ip:f.get('target_ip').trim(),rate_interval_ms:Number(f.get('rate_interval_ms'))})); await openSession(result.session.id); } catch(err) {report(err);} };
-$('open').onsubmit = async e => {e.preventDefault(); try {await openSession(new FormData(e.target).get('id'));} catch(err){report(err);} };
-$('send').onsubmit = async e => {
-  e.preventDefault();
-  const id = current, form = e.target, f = new FormData(form), body = f.get('body');
+
+$('nav-sessions').onclick = () => showLibrary().catch(report);
+$('brand').onclick = event => { event.preventDefault(); showLibrary().catch(report); };
+$('cancel-setup').onclick = () => showLibrary().catch(report);
+$('sessions-previous').onclick = () => { libraryPage = Math.max(0,libraryPage-1); refreshLibrary().catch(report); };
+$('sessions-next').onclick = () => { ++libraryPage; refreshLibrary().catch(report); };
+$('sessions-refresh').onclick = () => { libraryPage = 0; refreshLibrary().catch(report); };
+$('new-session').onclick = () => { leaveSession(); library.hidden = true; $('setup').hidden = false; document.title = 'New session · Garth'; };
+$('recipient').onchange = updateRecipientWarning;
+$('close-inspector').onclick = () => {
+  $('session').classList.remove('inspector-open');
+  [...$('agents').querySelectorAll('button')].find(b=>b.dataset.agent === selectedAgent)?.focus();
+};
+document.addEventListener('keydown',event=>{ if (event.key === 'Escape' && $('session').classList.contains('inspector-open')) $('close-inspector').click(); });
+document.querySelectorAll('[data-filter]').forEach(button=>{
+  button.onclick = () => {
+    messageFilter = button.dataset.filter;
+    document.querySelectorAll('[data-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b === button)));
+    renderMessages(true);
+  };
+});
+$('jump-latest').onclick = () => { $('messages').scrollTop = $('messages').scrollHeight; $('jump-latest').hidden = true; };
+$('messages').onscroll = () => { if ($('messages').scrollHeight - $('messages').scrollTop - $('messages').clientHeight < 48) $('jump-latest').hidden = true; };
+$('rename-session').onsubmit = async event => {
+  event.preventDefault(); const id = current;
+  try {
+    const result = await api(`/api/sessions/${encodeURIComponent(id)}/name`,post({name:$('session-name').value}));
+    if (current === id) { $('session-name').value = result.name; $('rename-result').textContent = 'Name saved'; await refresh(); }
+  } catch(error) { report(error); }
+};
+$('create').onsubmit = async event => {
+  event.preventDefault(); const form = event.target, button = form.querySelector('button'); button.disabled = true; clearError();
+  try {
+    const f = new FormData(form);
+    const agents = f.get('agents').split('\n').filter(x=>x.trim()).map(line=>{ const [name,role,model] = line.split(',').map(x=>x.trim()); return {name,role,model}; });
+    const result = await api('/api/sessions',post({name:f.get('name'),goal:f.get('goal'),concurrency:Number(f.get('concurrency')),thinking:f.has('thinking'),inference_timeout_ms:Number(f.get('inference_timeout_ms')),retry_delays_ms:f.get('retry_delays_ms').trim() ? f.get('retry_delays_ms').split(',').map(x=>Number(x.trim())) : [],agents,target_ip:f.get('target_ip').trim(),rate_interval_ms:Number(f.get('rate_interval_ms'))}));
+    await openSession(result.session.id);
+  } catch(error) { report(error); }
+  finally { button.disabled = false; }
+};
+$('open').onsubmit = async event => { event.preventDefault(); try { await openSession(new FormData(event.target).get('id').trim()); } catch(error) { report(error); } };
+$('send').onsubmit = async event => {
+  event.preventDefault(); clearError();
+  const id = current, form = event.target, f = new FormData(form), body = f.get('body');
   const button = form.querySelector('button'); button.disabled = true;
   try {
     await api(`/api/sessions/${encodeURIComponent(id)}/messages`,post({body,recipient_id:f.get('recipient_id')}));
     if (drafts.get(id)?.body === body) drafts.delete(id);
-    if (current === id) {
-      if (form.elements.body.value === body) form.elements.body.value = '';
-      await refresh();
-    }
-  } catch(err) { report(err); }
+    if (current === id) { if (form.elements.body.value === body) form.elements.body.value = ''; await refresh(); }
+  } catch(error) { report(error); }
   finally { button.disabled = false; }
 };
-$('pause').onclick = async () => {try {await api(`/api/sessions/${encodeURIComponent(current)}/${status==='paused'?'resume':'pause'}`,post({})); await refresh();} catch(err){report(err);} };
-$('storage-recover').onclick = async () => { try { await api(`/api/sessions/${encodeURIComponent(current)}/storage/recover`, post({})); $('error').textContent = ''; await refresh(); } catch (err) { report(err); } };
+$('pause').onclick = async () => {
+  const id = current; $('pause').disabled = true;
+  try { await api(`/api/sessions/${encodeURIComponent(id)}/${status === 'paused' ? 'resume' : 'pause'}`,post({})); if (current === id) await refresh(); }
+  catch(error) { report(error); }
+  finally { $('pause').disabled = false; }
+};
+$('storage-recover').onclick = async () => {
+  const id = current; $('storage-recover').disabled = true;
+  try { await api(`/api/sessions/${encodeURIComponent(id)}/storage/recover`,post({})); if (current === id) { clearError(); await refresh(); } }
+  catch(error) { report(error); }
+  finally { $('storage-recover').disabled = false; }
+};
 refreshLibrary().catch(report);
