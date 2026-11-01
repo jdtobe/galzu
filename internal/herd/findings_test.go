@@ -182,3 +182,44 @@ func TestOnlyTheAuthorOrLeaderCanWithdraw(t *testing.T) {
 		t.Fatalf("leader could not withdraw: %v", err)
 	}
 }
+
+func TestReviewRequestWakesAPeerAndPositionAnswersIt(t *testing.T) {
+	ctx := context.Background()
+	s, session, agents := findingHerd(t)
+	r := New(s, restsAtOnce{})
+	defer r.Stop()
+
+	if _, err := r.handleFinding(session, agents[0], ollama.Reply{Action: "finding", Text: "A claim worth checking"}, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	findings, _ := s.Findings(ctx, "s", 0)
+	saved, err := r.handleReview(session, agents[0], agents, ollama.Reply{
+		Action: "review", Finding: findings[0].ID, Recipient: agents[1].ID, Text: "Does the evidence hold?",
+	}, 0, nil)
+	if err != nil || !saved {
+		t.Fatalf("saved %v err %v", saved, err)
+	}
+	open, err := s.OpenReviewsFor(ctx, "s", agents[1].ID)
+	if err != nil || len(open) != 1 {
+		t.Fatalf("reviews = %+v err %v", open, err)
+	}
+	if _, err := r.handleEndorse(session, agents[1], ollama.Reply{
+		Action: "endorse", Finding: findings[0].ID, Choice: "disagree", Text: "The evidence does not hold.",
+	}, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	open, _ = s.OpenReviewsFor(ctx, "s", agents[1].ID)
+	if len(open) != 0 {
+		t.Fatalf("review still open: %+v", open)
+	}
+	messages, _ := s.Messages(ctx, "s", 0)
+	found := false
+	for _, message := range messages {
+		if message.Kind == "review" && message.RecipientID == agents[1].ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no review message: %+v", messages)
+	}
+}

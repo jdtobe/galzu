@@ -230,3 +230,14 @@ func TestAuthorEndorsementIsNotAPeerReview(t *testing.T) {
 		t.Fatalf("peer review did not clear the nudge:\n%s", text)
 	}
 }
+
+func TestReviewsRequestedOfThisAgentAppearInTheTurnPacket(t *testing.T) {
+	session, me, peers := fixture()
+	reviews := []store.FindingReview{{FindingID: 7, RequesterID: "a2", ReviewerID: "a1", Request: "Does the evidence hold?"}}
+	text := promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Reviews: reviews}).Tail())
+	for _, want := range []string{"Reviews requested of you", "7 | Bea | Does the evidence hold?", "answers the request"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q:\n%s", want, text)
+		}
+	}
+}

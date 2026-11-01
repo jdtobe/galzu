@@ -14,7 +14,7 @@ import (
 // preamble and the epoch header, and it is the only record that the layout
 // changed. Nothing stores a version per session, so a bump costs one cold prompt
 // per agent and no migration.
-const promptProtocol = 6
+const promptProtocol = 7
 
 // Prompt budgets in UTF-8 bytes of rendered entries. Compaction happens rarely
 // and drops well past the high-water mark so the prefix survives many turns.
@@ -41,6 +41,7 @@ type promptInput struct {
 	Ballots   map[int64][]store.Ballot
 	Plan      *store.Plan
 	Findings  []store.Finding
+	Reviews   []store.FindingReview
 }
 
 // prompt separates the append-only prefix from the rebuilt turn packet.
@@ -167,6 +168,7 @@ Reply with exactly one JSON object and nothing else:
 {"action":"finding","text":"claim","evidence":"...","stance":"support"} publish or revise a finding
 {"action":"endorse","finding":<id>,"choice":"agree" or "disagree","text":"..."} record agreement, not verification
 {"action":"retract","finding":<id>,"text":"why"} withdraw a claim without erasing it
+{"action":"review","finding":<id>,"recipient":"<agent id>","text":"question"} ask one peer to review a claim
 {"action":"plan","text":"...","proposal":<id>} propose steps, done, acceptance; proposal is optional and must have passed
 {"action":"rest","text":""} stay quiet
 Add "memory": a JSON string with your updated private working memory, at most 2048 UTF-8 bytes. Preserve evidence sources, uncertainty, disagreement, and unanswered questions; distinguish claims from observations.
@@ -187,7 +189,7 @@ func entryLine(m store.Message, viewer string) string {
 	if m.Kind == "help" {
 		kind += " help-request"
 	}
-	if m.Kind == "finding" || m.Kind == "endorse" || m.Kind == "retract" {
+	if m.Kind == "finding" || m.Kind == "endorse" || m.Kind == "retract" || m.Kind == "review" {
 		kind += " " + m.Kind
 	}
 	if m.RecipientID != "" && m.RecipientID != viewer && m.AgentID != viewer {
@@ -255,6 +257,21 @@ func turnPacket(in promptInput) string {
 		if hasElection(in.Proposals) {
 			b.WriteString("\nIn an election, name a candidate agent id as your choice.")
 		}
+	}
+	if len(in.Reviews) > 0 {
+		names := map[string]string{}
+		for _, peer := range in.Agents {
+			names[peer.ID] = peer.Name
+		}
+		b.WriteString("\nReviews requested of you (finding | requester | question):")
+		for _, review := range in.Reviews {
+			name := names[review.RequesterID]
+			if name == "" {
+				name = review.RequesterID
+			}
+			fmt.Fprintf(&b, "\n%d | %s | %s", review.FindingID, name, truncate(review.Request, 240))
+		}
+		b.WriteString("\nExamining a finding with evidence, a position, or a revision answers the request.")
 	}
 	if len(in.Findings) > 0 {
 		names := map[string]string{}

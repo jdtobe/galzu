@@ -223,3 +223,44 @@ func TestAllFindingsCarriesSessionAndAuthor(t *testing.T) {
 		t.Fatalf("paging: %+v %v", page, err)
 	}
 }
+
+func TestFindingReviewIsRequestedAnsweredAndNotSelf(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, Session{ID: "s", Goal: "g", Status: "running", Concurrency: 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	finding, err := s.CreateFinding(ctx, "s", "a", "a claim with a weak spot", "some evidence", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestReview(ctx, "s", finding.ID, "a", "a", "self review"); err == nil {
+		t.Fatal("requested a review from itself")
+	}
+	review, err := s.RequestReview(ctx, "s", finding.ID, "a", "b", "is the evidence sufficient?")
+	if err != nil || review.Status != "open" {
+		t.Fatalf("%+v %v", review, err)
+	}
+	open, err := s.OpenReviewsFor(ctx, "s", "b")
+	if err != nil || len(open) != 1 || open[0].Request != "is the evidence sufficient?" {
+		t.Fatalf("%+v %v", open, err)
+	}
+	if err := s.ResolveReviews(ctx, finding.ID, "b"); err != nil {
+		t.Fatal(err)
+	}
+	open, err = s.OpenReviewsFor(ctx, "s", "b")
+	if err != nil || len(open) != 0 {
+		t.Fatalf("still open: %+v %v", open, err)
+	}
+	stored, err := s.Finding(ctx, "s", finding.ID)
+	if err != nil || len(stored.Reviews) != 1 || stored.Reviews[0].Status != "answered" {
+		t.Fatalf("finding = %+v %v", stored, err)
+	}
+	if _, err := s.RequestReview(ctx, "other", finding.ID, "a", "b", "x"); !errors.Is(err, ErrFindingGone) {
+		t.Fatalf("cross-session review: %v", err)
+	}
+}

@@ -62,6 +62,9 @@ func (r *Runner) handleFinding(s store.Session, a store.Agent, reply ollama.Repl
 	if evidence != "" {
 		heading += fmt.Sprintf("\nEvidence (%s): %s", stance, evidence)
 	}
+	if err := r.store.ResolveReviews(ctx, finding.ID, a.ID); err != nil {
+		return false, err
+	}
 	if _, err := r.store.AppendAgentReplyWithMemory(ctx, s.ID, a.ID, "", "finding", heading, reply.Thinking, last, memory); err != nil {
 		return false, err
 	}
@@ -107,8 +110,47 @@ func (r *Runner) handleRetract(s store.Session, a store.Agent, reply ollama.Repl
 	case err != nil:
 		return false, err
 	}
+	if err := r.store.ResolveReviews(context.Background(), reply.Finding, a.ID); err != nil {
+		return false, err
+	}
 	body := fmt.Sprintf("Finding #%d withdrawn: %s", reply.Finding, reason)
 	if _, err := r.store.AppendAgentReplyWithMemory(context.Background(), s.ID, a.ID, "", "retract", body, reply.Thinking, last, memory); err != nil {
+		return false, err
+	}
+	r.notifyLocked(s.ID)
+	return true, nil
+}
+
+// handleReview asks one peer to examine a finding. It is a social request, not a
+// task: there is no timer and no escalation. A position, revision or withdrawal
+// by the reviewer answers it.
+func (r *Runner) handleReview(s store.Session, a store.Agent, agents []store.Agent, reply ollama.Reply, last int64, memory *string) (bool, error) {
+	if reply.Finding <= 0 {
+		return false, &ollama.ValidationError{Reason: "a review request needs the finding id"}
+	}
+	reviewer := ""
+	for _, peer := range agents {
+		if peer.ID == reply.Recipient && peer.ID != a.ID && peer.Status == "ready" {
+			reviewer = peer.ID
+			break
+		}
+	}
+	if reviewer == "" {
+		return false, &ollama.ValidationError{Reason: "a review request needs a ready recipient agent id"}
+	}
+	request := strings.TrimSpace(reply.Text)
+	if len(request) > 2048 {
+		return false, &ollama.ValidationError{Reason: "a review request must be at most 2048 bytes"}
+	}
+	review, err := r.store.RequestReview(context.Background(), s.ID, reply.Finding, a.ID, reviewer, request)
+	switch {
+	case errors.Is(err, store.ErrFindingGone):
+		return false, &ollama.ValidationError{Reason: fmt.Sprintf("finding #%d does not exist in this session", reply.Finding)}
+	case err != nil:
+		return false, err
+	}
+	body := fmt.Sprintf("Review requested on finding #%d: %s", review.FindingID, request)
+	if _, err := r.store.AppendAgentReplyWithMemory(context.Background(), s.ID, a.ID, reviewer, "review", body, reply.Thinking, last, memory); err != nil {
 		return false, err
 	}
 	r.notifyLocked(s.ID)
@@ -133,6 +175,9 @@ func (r *Runner) handleEndorse(s store.Session, a store.Agent, reply ollama.Repl
 		if errors.Is(err, store.ErrFindingGone) {
 			return false, &ollama.ValidationError{Reason: fmt.Sprintf("finding #%d does not exist in this session", reply.Finding)}
 		}
+		return false, err
+	}
+	if err := r.store.ResolveReviews(context.Background(), reply.Finding, a.ID); err != nil {
 		return false, err
 	}
 	body := fmt.Sprintf("Position on finding #%d: %s", reply.Finding, choice)

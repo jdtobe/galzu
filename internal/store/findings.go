@@ -24,6 +24,7 @@ type Finding struct {
 	Evidence  []FindingEvidence `json:"evidence,omitempty"`
 	Positions []FindingPosition `json:"positions,omitempty"`
 	Revisions []FindingRevision `json:"revisions,omitempty"`
+	Reviews   []FindingReview   `json:"reviews,omitempty"`
 }
 
 type FindingRevision struct {
@@ -41,6 +42,21 @@ type FindingEvidence struct {
 	Stance    string    `json:"stance"` // support, oppose
 	Body      string    `json:"body"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// FindingReview is a request from one agent to another to examine a finding. It
+// is a social cue, not a task with a leash: no timer, no escalation, and any
+// position, revision or withdrawal by the reviewer answers it.
+type FindingReview struct {
+	ID          int64     `json:"id"`
+	FindingID   int64     `json:"finding_id"`
+	SessionID   string    `json:"session_id"`
+	RequesterID string    `json:"requester_id"`
+	ReviewerID  string    `json:"reviewer_id"`
+	Request     string    `json:"request"`
+	Status      string    `json:"status"` // open, answered
+	CreatedAt   time.Time `json:"created_at"`
+	AnsweredAt  time.Time `json:"answered_at,omitempty"`
 }
 
 type FindingPosition struct {
@@ -66,6 +82,11 @@ CREATE TABLE IF NOT EXISTS finding_revisions(
 CREATE TABLE IF NOT EXISTS finding_evidence(
   id INTEGER PRIMARY KEY AUTOINCREMENT, finding_id INTEGER NOT NULL REFERENCES findings(id),
   author_id TEXT NOT NULL, stance TEXT NOT NULL, body TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS finding_reviews(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, finding_id INTEGER NOT NULL REFERENCES findings(id),
+  session_id TEXT NOT NULL, requester_id TEXT NOT NULL, reviewer_id TEXT NOT NULL,
+  request TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+  created_at TEXT NOT NULL, answered_at TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS finding_positions(
   finding_id INTEGER NOT NULL REFERENCES findings(id), agent_id TEXT NOT NULL,
   choice TEXT NOT NULL, text TEXT NOT NULL DEFAULT '', at TEXT NOT NULL,
@@ -270,6 +291,9 @@ FROM findings WHERE id=? AND session_id=?`, id, sessionID).
 	if f.Revisions, err = s.findingRevisions(ctx, id); err != nil {
 		return Finding{}, err
 	}
+	if f.Reviews, err = s.findingReviews(ctx, id); err != nil {
+		return Finding{}, err
+	}
 	return f, nil
 }
 
@@ -311,6 +335,85 @@ FROM finding_positions WHERE finding_id=? ORDER BY agent_id`, id)
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) findingReviews(ctx context.Context, id int64) ([]FindingReview, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,finding_id,session_id,requester_id,reviewer_id,request,status,created_at,answered_at
+FROM finding_reviews WHERE finding_id=? ORDER BY id`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []FindingReview{}
+	for rows.Next() {
+		var review FindingReview
+		var created, answered string
+		if err := rows.Scan(&review.ID, &review.FindingID, &review.SessionID, &review.RequesterID, &review.ReviewerID,
+			&review.Request, &review.Status, &created, &answered); err != nil {
+			return nil, err
+		}
+		review.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		if answered != "" {
+			review.AnsweredAt, _ = time.Parse(time.RFC3339Nano, answered)
+		}
+		out = append(out, review)
+	}
+	return out, rows.Err()
+}
+
+// RequestReview asks one agent to examine a finding.
+func (s *Store) RequestReview(ctx context.Context, sessionID string, findingID int64, requesterID, reviewerID, request string) (FindingReview, error) {
+	if requesterID == reviewerID {
+		return FindingReview{}, errors.New("an agent cannot request a review from itself")
+	}
+	var exists int
+	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM findings WHERE id=? AND session_id=?`, findingID, sessionID).Scan(&exists); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return FindingReview{}, ErrFindingGone
+		}
+		return FindingReview{}, err
+	}
+	now := time.Now().UTC()
+	result, err := s.db.ExecContext(ctx, `INSERT INTO finding_reviews(finding_id,session_id,requester_id,reviewer_id,request,created_at) VALUES(?,?,?,?,?,?)`,
+		findingID, sessionID, requesterID, reviewerID, strings.TrimSpace(request), now.Format(time.RFC3339Nano))
+	if err != nil {
+		return FindingReview{}, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return FindingReview{}, err
+	}
+	return FindingReview{ID: id, FindingID: findingID, SessionID: sessionID, RequesterID: requesterID,
+		ReviewerID: reviewerID, Request: strings.TrimSpace(request), Status: "open", CreatedAt: now}, nil
+}
+
+// OpenReviewsFor lists the reviews addressed to one agent.
+func (s *Store) OpenReviewsFor(ctx context.Context, sessionID, reviewerID string) ([]FindingReview, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id,finding_id,session_id,requester_id,reviewer_id,request,status,created_at,answered_at
+FROM finding_reviews WHERE session_id=? AND reviewer_id=? AND status='open' ORDER BY id`, sessionID, reviewerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []FindingReview{}
+	for rows.Next() {
+		var review FindingReview
+		var created, answered string
+		if err := rows.Scan(&review.ID, &review.FindingID, &review.SessionID, &review.RequesterID, &review.ReviewerID,
+			&review.Request, &review.Status, &created, &answered); err != nil {
+			return nil, err
+		}
+		review.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		out = append(out, review)
+	}
+	return out, rows.Err()
+}
+
+// ResolveReviews marks a reviewer's open requests for a finding answered.
+func (s *Store) ResolveReviews(ctx context.Context, findingID int64, reviewerID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE finding_reviews SET status='answered',answered_at=? WHERE finding_id=? AND reviewer_id=? AND status='open'`,
+		time.Now().UTC().Format(time.RFC3339Nano), findingID, reviewerID)
+	return err
 }
 
 func (s *Store) findingRevisions(ctx context.Context, id int64) ([]FindingRevision, error) {

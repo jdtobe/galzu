@@ -487,6 +487,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 				current = &plan
 			}
 			findings, _ := r.store.Findings(x.ctx, s.ID, 12)
+			reviews, _ := r.store.OpenReviewsFor(x.ctx, s.ID, a.ID)
 			proposals, _ := r.store.OpenProposals(x.ctx, s.ID)
 			ballots := make(map[int64][]store.Ballot, len(proposals))
 			for _, proposal := range proposals {
@@ -507,6 +508,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 				Ballots:   ballots,
 				Plan:      current,
 				Findings:  findings,
+				Reviews:   reviews,
 			})
 		}
 		rendered := render()
@@ -733,6 +735,9 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		if err == nil && reply.Action == "retract" {
 			checkpointSaved, err = r.handleRetract(s, a, reply, last, updatedMemory)
+		}
+		if err == nil && reply.Action == "review" {
+			checkpointSaved, err = r.handleReview(s, a, agents, reply, last, updatedMemory)
 		}
 		if err == nil && !checkpointSaved {
 			err = r.store.CompleteRestWithMemory(context.Background(), s.ID, a.ID, last, updatedMemory)

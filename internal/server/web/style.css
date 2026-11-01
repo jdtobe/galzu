@@ -223,6 +223,7 @@ summary { cursor: pointer; }
 .finding-evidence.support strong { color: var(--color-primary); }
 .finding-evidence.oppose strong { color: var(--color-error); }
 .finding-position { margin: 2px 0 0 10px; overflow-wrap: anywhere; }
+.finding-review { margin: 4px 0 0 10px; color: var(--color-warning); overflow-wrap: anywhere; }
 .findings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
 .finding-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
 .finding-card h2 { font-size: 15px; line-height: 1.35; margin: 0; overflow-wrap: anywhere; }

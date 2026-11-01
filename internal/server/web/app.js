@@ -295,6 +295,9 @@ async function renderFindings(sid) {
     for (const position of finding.positions || []) {
       item.append(element('p','finding-position',`${names.get(position.agent_id) || position.agent_id}: ${position.choice}${position.text ? ` — ${position.text}` : ''}`));
     }
+    for (const review of finding.reviews || []) {
+      if (review.status === 'open') item.append(element('p','finding-review',`Review requested from ${names.get(review.reviewer_id) || review.reviewer_id}: ${review.request}`));
+    }
     if ((finding.revisions || []).length > 1) {
       item.append(element('p','muted',`${finding.revisions.length - 1} ${finding.revisions.length === 2 ? 'revision' : 'revisions'} kept in history`));
     }
