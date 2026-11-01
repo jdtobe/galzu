@@ -54,7 +54,8 @@ type FindingReview struct {
 	RequesterID string    `json:"requester_id"`
 	ReviewerID  string    `json:"reviewer_id"`
 	Request     string    `json:"request"`
-	Status      string    `json:"status"` // open, answered
+	Claim       string    `json:"claim,omitempty"` // filled by OpenReviewsFor
+	Status      string    `json:"status"`          // open, answered
 	CreatedAt   time.Time `json:"created_at"`
 	AnsweredAt  time.Time `json:"answered_at,omitempty"`
 }
@@ -389,8 +390,9 @@ func (s *Store) RequestReview(ctx context.Context, sessionID string, findingID i
 
 // OpenReviewsFor lists the reviews addressed to one agent.
 func (s *Store) OpenReviewsFor(ctx context.Context, sessionID, reviewerID string) ([]FindingReview, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,finding_id,session_id,requester_id,reviewer_id,request,status,created_at,answered_at
-FROM finding_reviews WHERE session_id=? AND reviewer_id=? AND status='open' ORDER BY id`, sessionID, reviewerID)
+	rows, err := s.db.QueryContext(ctx, `SELECT r.id,r.finding_id,r.session_id,r.requester_id,r.reviewer_id,r.request,r.status,r.created_at,r.answered_at,f.claim
+FROM finding_reviews r JOIN findings f ON f.id=r.finding_id
+WHERE r.session_id=? AND r.reviewer_id=? AND r.status='open' ORDER BY r.id`, sessionID, reviewerID)
 	if err != nil {
 		return nil, err
 	}
@@ -400,7 +402,7 @@ FROM finding_reviews WHERE session_id=? AND reviewer_id=? AND status='open' ORDE
 		var review FindingReview
 		var created, answered string
 		if err := rows.Scan(&review.ID, &review.FindingID, &review.SessionID, &review.RequesterID, &review.ReviewerID,
-			&review.Request, &review.Status, &created, &answered); err != nil {
+			&review.Request, &review.Status, &created, &answered, &review.Claim); err != nil {
 			return nil, err
 		}
 		review.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)

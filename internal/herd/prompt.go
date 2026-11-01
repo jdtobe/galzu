@@ -263,13 +263,13 @@ func turnPacket(in promptInput) string {
 		for _, peer := range in.Agents {
 			names[peer.ID] = peer.Name
 		}
-		b.WriteString("\nReviews requested of you (finding | requester | question):")
+		b.WriteString("\nReviews requested of you (finding | claim | requester | question):")
 		for _, review := range in.Reviews {
 			name := names[review.RequesterID]
 			if name == "" {
 				name = review.RequesterID
 			}
-			fmt.Fprintf(&b, "\n%d | %s | %s", review.FindingID, name, truncate(review.Request, 240))
+			fmt.Fprintf(&b, "\n%d | %s | %s | %s", review.FindingID, truncate(review.Claim, 120), name, truncate(review.Request, 240))
 		}
 		b.WriteString("\nExamining a finding with evidence, a position, or a revision answers the request.")
 	}
