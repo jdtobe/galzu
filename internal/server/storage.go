@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 )
 
@@ -16,7 +17,7 @@ func (v *server) databaseInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func syncedPathWarning(path string) string {
-	lower := strings.ToLower(path)
+	lower := strings.ToLower(filepath.ToSlash(path))
 	for _, marker := range []string{"/documents/", "/desktop/", "/dropbox/", "/onedrive/", "/google drive/", "/library/mobile documents/"} {
 		if strings.Contains(lower, marker) {
 			return fmt.Sprintf("The database is at %s, inside a cloud-synced folder. SQLite is not reliable there; stop the app and restart with -db pointing to a local folder.", path)

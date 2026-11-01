@@ -113,7 +113,7 @@ func copyFile(from, to string) error {
 // intermittent storage failure in these folders is almost always the sync
 // daemon, not the database.
 func warnSynced(path string) {
-	lower := strings.ToLower(path)
+	lower := strings.ToLower(filepath.ToSlash(path))
 	for _, marker := range []string{"/documents/", "/desktop/", "/dropbox/", "/onedrive/", "/google drive/", "/library/mobile documents/"} {
 		if strings.Contains(lower, marker) {
 			log.Printf("warning: %s is in a cloud-synced folder. SQLite is not reliable there; use the default path %s or another local folder.", path, defaultDBPath())
