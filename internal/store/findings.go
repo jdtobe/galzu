@@ -233,8 +233,8 @@ func (s *Store) VerifyFinding(ctx context.Context, sessionID string, findingID i
 	if verified {
 		value, at, who = 1, time.Now().UTC().Format(time.RFC3339Nano), by
 	}
-	result, err := s.db.ExecContext(ctx, `UPDATE findings SET verified=?,verified_at=?,verified_by=? WHERE id=? AND session_id=?`,
-		value, at, who, findingID, sessionID)
+	result, err := s.db.ExecContext(ctx, `UPDATE findings SET verified=?,verified_at=?,verified_by=?,updated_at=? WHERE id=? AND session_id=?`,
+		value, at, who, time.Now().UTC().Format(time.RFC3339Nano), findingID, sessionID)
 	if err != nil {
 		return err
 	}
