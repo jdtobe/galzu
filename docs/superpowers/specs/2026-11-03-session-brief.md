@@ -56,8 +56,9 @@ conversation for compaction, and a compacted brief is no brief.
 
 ## Protocol
 
-`promptProtocol` is now 3. Any existing session gets one cold prompt per agent
-and no migration; nothing stores a version per session.
+`promptProtocol` was 3 when the brief landed; later actions have bumped it, and
+the current value is in `prompt.go`. Any existing session gets one cold prompt
+per agent and no migration; nothing stores a version per session.
 
 ## What it does not do
 

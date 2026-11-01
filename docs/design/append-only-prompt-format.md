@@ -73,13 +73,18 @@ The tail is the only part that is always evaluated.
 
 ## Format
 
+The protocol version is 8 at the time of writing. The action list is
+maintained in `internal/herd/prompt.go`; actions added since this note (findings,
+reviews, recall, plans, votes, capacity offers) are deliberately not duplicated
+here, because a second copy would drift.
+
 Levels are ordered from most stable to least stable. Each level is a separate
 message with a fixed role.
 
 ### L0 — session preamble (shared by every agent on the model)
 
 ```
-GALZU v2
+GALZU v8
 Session <id>
 Goal: <verbatim session goal>
 
@@ -110,7 +115,7 @@ IDs only. A name change must not touch this line.
 ### L2 — epoch header (frozen when the epoch is created)
 
 ```
-EPOCH <n> (protocol 1)
+EPOCH <n> (protocol 8)
 Messages before id <cut id> are folded into the summary below.
 Summary: <host-generated, <= 2048 bytes, or "none">
 Your working memory at this point: <accepted memory, or "none">
@@ -161,7 +166,7 @@ where changing them costs nothing.
 Turn 1, after messages 1–3:
 
 ```
-system   [L0] GALZU v2 ... Reply with exactly one JSON object ...
+system   [L0] GALZU v8 ... Reply with exactly one JSON object ...
 system   [L1] You are agent a1. Role: leader.
 system   [L2] EPOCH 0 ... Summary: none ...
 user     [L3] 1 host public: Let's plan the release.
@@ -173,7 +178,7 @@ user     [L4] TURN ... memory ... roster ... Reply now.
 Turn 2, after messages 4–5 arrive:
 
 ```
-system   [L0] GALZU v2 ...                   (identical bytes)
+system   [L0] GALZU v8 ...                   (identical bytes)
 system   [L1] You are agent a1 ...           (identical bytes)
 system   [L2] EPOCH 0 ...                    (identical bytes)
 user     [L3] 1 host public: ...             (identical bytes)
