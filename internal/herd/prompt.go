@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/jdtobe/garth/internal/ollama"
-	"github.com/jdtobe/garth/internal/store"
+	"github.com/jdtobe/galzu/internal/ollama"
+	"github.com/jdtobe/galzu/internal/store"
 )
 
 // promptProtocol versions the canonical byte layout. Rendering changes that can
@@ -133,7 +133,7 @@ func renderPrompt(in promptInput) prompt {
 // sessionPreamble is shared byte-for-byte by every agent in a session, so
 // switching agents still reuses the beginning of the cache.
 func sessionPreamble(s store.Session) string {
-	return fmt.Sprintf(`GARTH v%d
+	return fmt.Sprintf(`GALZU v%d
 Session %s
 Goal: %s
 

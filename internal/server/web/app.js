@@ -57,7 +57,7 @@ function leaveSession() {
 async function showLibrary() {
   clearTimeout(librarySearchTimer);
   leaveSession(); $('setup').hidden = true; library.hidden = false;
-  document.title = 'Garth · Sessions';
+  document.title = 'Galzu · Sessions';
   await refreshLibrary();
 }
 async function refreshLibrary() {
@@ -174,7 +174,7 @@ async function refresh() {
   currentAgents = data.agents || [];
   const title = data.session.name || data.session.goal.slice(0,80);
   $('session-title').textContent = title;
-  document.title = `${title} · Garth`;
+  document.title = `${title} · Galzu`;
   $('goal').textContent = data.session.goal;
   if (document.activeElement !== $('session-name') && $('session-name').dataset.session !== current) {
     $('session-name').value = data.session.name || '';
@@ -200,7 +200,7 @@ async function refresh() {
   $('slot-count').textContent = `${active.length} of ${data.session.concurrency} inference slots active`;
   $('slots').replaceChildren();
   for (let i = 0; i < data.session.concurrency; ++i) $('slots').append(element('i',i < active.length ? 'on' : ''));
-  const resting = currentAgents.filter(a => GarthUI.agentState(a,activity[a.id]).label === 'Resting').length;
+  const resting = currentAgents.filter(a => GalzuUI.agentState(a,activity[a.id]).label === 'Resting').length;
   $('queue-count').textContent = `${queued} queued · ${resting} resting`;
   $('inference-note').textContent = active.length ? `${active.slice(0,3).map(a => a.name).join(', ')}${active.length > 3 ? ` + ${active.length-3} more` : ''} ${active.length === 1 ? 'is' : 'are'} in inference${status === 'paused' ? ' · session paused' : ''}` : status === 'paused' ? 'Session paused · pending messages are preserved' : 'No requests currently in inference';
   renderMessages();
@@ -213,7 +213,7 @@ function renderRoster() {
   $('agents').replaceChildren();
   currentAgents.forEach((agent,index) => {
     const li = element('li'), button = element('button','agent-button');
-    const state = GarthUI.agentState(agent,snapshot.activity?.[agent.id],status === 'paused');
+    const state = GalzuUI.agentState(agent,snapshot.activity?.[agent.id],status === 'paused');
     button.type = 'button'; button.dataset.agent = agent.id;
     button.setAttribute('aria-pressed',String(agent.id === selectedAgent));
     button.setAttribute('aria-controls','agent-detail');
@@ -249,7 +249,7 @@ function renderAgentDetail() {
   if (!agent) { panel.append(element('p','muted','Select an agent to inspect its activity and settings.')); return; }
   const sid = current, aid = agent.id, index = currentAgents.indexOf(agent);
   const activity = snapshot.activity?.[aid], recovery = snapshot.recoveries?.[aid];
-  const state = GarthUI.agentState(agent,activity,status === 'paused');
+  const state = GalzuUI.agentState(agent,activity,status === 'paused');
   const icon = avatar(agent.name,index); icon.classList.add('detail-avatar');
   panel.append(icon,element('h2','',agent.name),element('p','detail-role',`${agent.role} · ${state.label}`));
   const overview = element('section','detail-section'), info = element('dl');
@@ -296,12 +296,12 @@ function renderAgentDetail() {
   const diagnosticSection = element('section','detail-section');
   const diagnostic = details('Timing & prompt diagnostics',`diagnostics-${aid}`,openKeys), timings = element('dl');
   if (activity) {
-    definition(timings,'Harness queue',activity.state === 'queued' ? 'Waiting for a slot' : GarthUI.duration(activity.queue_ms));
-    definition(timings,'Inference request',activity.state === 'inference' ? 'In progress · duration available after completion' : GarthUI.duration(activity.inference_ms));
+    definition(timings,'Harness queue',activity.state === 'queued' ? 'Waiting for a slot' : GalzuUI.duration(activity.queue_ms));
+    definition(timings,'Inference request',activity.state === 'inference' ? 'In progress · duration available after completion' : GalzuUI.duration(activity.inference_ms));
     definition(timings,'Prompt size',`${activity.prompt_bytes.toLocaleString()} bytes`);
-    definition(timings,'Reused prefix',GarthUI.cacheReuse(activity));
+    definition(timings,'Reused prefix',GalzuUI.cacheReuse(activity));
     if (activity.prompt_eval_count) definition(timings,'Prompt tokens',activity.prompt_eval_count.toLocaleString());
-    if (activity.prompt_eval_ms) definition(timings,'Prompt evaluation',GarthUI.duration(activity.prompt_eval_ms));
+    if (activity.prompt_eval_ms) definition(timings,'Prompt evaluation',GalzuUI.duration(activity.prompt_eval_ms));
   } else definition(timings,'Activity','No timing recorded since server start');
   diagnostic.append(timings,element('p','','Request time includes any Ollama queueing. Prompt size is UTF-8 bytes, not tokens. Reused prefix is the share of this prompt identical to the previous one; Ollama may reuse less when another agent used the same slot. Prompt evaluation is what Ollama spent reading the prompt, so a short time with a large prompt indicates a warm cache. Timings reset on server restart.'));
   diagnosticSection.append(diagnostic);
@@ -336,7 +336,7 @@ function renderAgentDetail() {
 function renderMessages(force = false) {
   if (!snapshot) return;
   const messages = snapshot.messages || [];
-  const visible = messages.filter(m=>GarthUI.visibleMessage(m,messageFilter));
+  const visible = messages.filter(m=>GalzuUI.visibleMessage(m,messageFilter));
   // Messages are immutable: activity-only updates need not rebuild the whole thread.
   const signature = `${messageFilter}:${visible.length}:${visible.at(-1)?.id}:${JSON.stringify(snapshot.delivery)}:${currentAgents.map(a=>a.status).join(',')}`;
   if (!force && signature === messageSignature) return;
@@ -368,7 +368,7 @@ function renderMessages(force = false) {
     }
     if (human) {
       const groups = {processed:[],pending:[],'needs attention':[],unknown:[]};
-      for (const agent of currentAgents.filter(a=>!message.recipient_id || a.id === message.recipient_id)) groups[GarthUI.deliveryState(message,agent,snapshot.delivery?.[agent.id])].push(agent.name);
+      for (const agent of currentAgents.filter(a=>!message.recipient_id || a.id === message.recipient_id)) groups[GalzuUI.deliveryState(message,agent,snapshot.delivery?.[agent.id])].push(agent.name);
       const progress = details(Object.entries(groups).filter(([,names])=>names.length).map(([state,names])=>`${names.length} ${state}`).join(' · ') || 'No recipients',`delivery-${message.id}`,openThoughts);
       progress.className = 'delivery'; progress.title = 'Processed means included in a completed turn, not necessarily understood or answered.';
       for (const [state,names] of Object.entries(groups)) if (names.length) progress.append(element('p','',`${state}: ${names.join(', ')}`));
@@ -426,7 +426,7 @@ $('clear-session-filters').onclick = () => {
   $('session-query').value = ''; $('session-status').value = ''; filterLibrary();
   $('session-query').focus();
 };
-$('new-session').onclick = () => { clearTimeout(librarySearchTimer); leaveSession(); library.hidden = true; $('setup').hidden = false; document.title = 'New session · Garth'; };
+$('new-session').onclick = () => { clearTimeout(librarySearchTimer); leaveSession(); library.hidden = true; $('setup').hidden = false; document.title = 'New session · Galzu'; };
 $('recipient').onchange = updateRecipientWarning;
 $('close-inspector').onclick = () => {
   $('session').classList.remove('inspector-open');

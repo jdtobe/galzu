@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jdtobe/garth/internal/herd"
-	"github.com/jdtobe/garth/internal/store"
+	"github.com/jdtobe/galzu/internal/herd"
+	"github.com/jdtobe/galzu/internal/store"
 )
 
 func TestConversationWorkspaceAssets(t *testing.T) {
@@ -29,7 +29,7 @@ func TestConversationWorkspaceAssets(t *testing.T) {
 		{"/style.css", []string{".session-workspace", ".inspector", "@media (max-width: 700px)"}},
 		{"/ui.js", []string{"agentState", "visibleMessage", "deliveryState"}},
 		{"/app.js", []string{"renderAgentDetail", "renderMessages", "refreshLibrary"}},
-		{"/garth-mark.svg", []string{"<svg", "long-haired profile with glasses", `fill-rule="evenodd"`}},
+		{"/galzu-mark.svg", []string{"<svg", "trilobe mark"}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -47,7 +47,7 @@ func TestConversationWorkspaceAssets(t *testing.T) {
 }
 
 func TestBrandArtworkIsSelfContained(t *testing.T) {
-	data, err := web.ReadFile("web/garth-mark.svg")
+	data, err := web.ReadFile("web/galzu-mark.svg")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,12 +80,12 @@ func TestBrandArtworkIsSelfContained(t *testing.T) {
 }
 
 func TestBrandMarkUsesOneColorAndTransparentNegativeSpace(t *testing.T) {
-	data, err := web.ReadFile("web/garth-mark.svg")
+	data, err := web.ReadFile("web/galzu-mark.svg")
 	if err != nil {
 		t.Fatal(err)
 	}
 	decoder := xml.NewDecoder(strings.NewReader(string(data)))
-	hasCutout := false
+	lobes := 0
 	for {
 		token, err := decoder.Token()
 		if err == io.EOF {
@@ -98,20 +98,25 @@ func TestBrandMarkUsesOneColorAndTransparentNegativeSpace(t *testing.T) {
 		if !ok {
 			continue
 		}
+		// A backdrop would defeat the mask: the mark has to be its own
+		// negative space, not a tile with a drawing on it.
+		if start.Name.Local == "rect" {
+			t.Fatal("unexpected backdrop rect; the mark keeps a transparent ground")
+		}
+		if start.Name.Local == "path" {
+			lobes++
+		}
 		for _, attribute := range start.Attr {
 			switch attribute.Name.Local {
 			case "fill", "stroke":
 				if attribute.Value != "none" && attribute.Value != "currentColor" {
 					t.Fatalf("unexpected extra paint color: %s", attribute.Value)
 				}
-			case "fill-rule":
-				if attribute.Value == "evenodd" {
-					hasCutout = true
-				}
 			}
 		}
 	}
-	if !hasCutout {
-		t.Fatal("expected transparent face cutout")
+	// Three leaves plus the stem: fewer means the shape lost an element.
+	if lobes < 4 {
+		t.Fatalf("expected at least four filled shapes, got %d", lobes)
 	}
 }

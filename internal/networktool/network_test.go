@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdtobe/garth/internal/networktool"
+	"github.com/jdtobe/galzu/internal/networktool"
 )
 
 func TestHTTPRejectsOtherHostAndRedirect(t *testing.T) {

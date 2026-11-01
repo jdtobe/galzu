@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jdtobe/garth/internal/ollama"
-	"github.com/jdtobe/garth/internal/store"
+	"github.com/jdtobe/galzu/internal/ollama"
+	"github.com/jdtobe/galzu/internal/store"
 )
 
 type lateDeletionReply struct{ started, release, returned chan struct{} }

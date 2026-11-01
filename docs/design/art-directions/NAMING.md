@@ -20,21 +20,39 @@ Names that survive are either **longer than the available words** (Germinal,
 Trilobate) or **made up**. Testing dictionary words one at a time has a hit rate
 of roughly zero; the table below is the evidence.
 
-## Decision: Garth
+## Decision: Galzu
 
-Chosen 2026-11-01, with the collision known and accepted. The repo, the module
-path and `garth.db` already carry the name, so the decision costs nothing to
-adopt — the only cost is awareness that `heygarth.ai` exists.
+Chosen 2026-11-01. The word is the Sumerian-flavoured *the one who knows*: in
+Zecharia Sitchin's **Lost Book of Enki** it names Galzu, "Great Knower", an
+emissary sent from Nibiru. That book is modern pseudohistory, not a Sumerian
+source, and Galzu is not a Sumerian deity — worth knowing before writing an
+origin story, because the claim is checkable. In Assyriology the word is
+recorded as a **Kassite** epithet, and **Dūr-Galzu** was a Kassite royal city,
+the ruins at Aqar Quf in Iraq.
 
-What that means in practice:
+So the honest line for public use: *Galzu, the one who knows.* Not "the
+Sumerian god".
 
-| Thing | Status | Do instead |
-|---|---|---|
-| `github.com/garth` org | **free** | Take it — this is the one clean handle in the whole list |
-| `pip install garth` | taken — a Garmin Connect client, v0.8.0, still in use | ship the SDK as `garth-sdk` |
-| `npm install garth` | taken — an abandoned 2019 package | scope it, `@garth/cli` |
-| `garth.com`, `.ai`, `.dev`, `.app` | all taken | pick from the free long tail (`garth.sh`, `.so`, `.co`) |
-| `heygarth.ai` | an AI engineering-intelligence platform by Darner AI | do not market as "AI engineering intelligence", which was never the plan |
+It was the only name screened with a clean namespace almost everywhere:
+
+| Thing | Status |
+|---|---|
+| `galzu.ai`, `.dev`, `.app`, `.io`, `.so`, `.co`, `.net` | free |
+| `galzu.com`, `galzu.org` | taken 2009 |
+| `npm install galzu` | free |
+| `pip install galzu` | free |
+| GitHub org `galzu` | free (the user handle is taken) |
+
+## Renamed from Garth
+
+Garth was chosen first and reversed the same day. Cost of the reversal, paid in
+one commit: the module path, the `cmd/` directory, the binary, the default
+database name (`garth.db` to `galzu.db`), the JS namespace (`GarthUI` to
+`GalzuUI`), page titles, the favicon and its tests, and the prompt preamble
+string that every agent receives.
+
+Garth remains a decent name and stays in the table below; the reason it lost is
+that `heygarth.ai` is a live AI engineering product, and Galzu was free.
 
 ## Dead
 
@@ -51,6 +69,7 @@ What that means in practice:
 | **Grasp** | No free namespace | every domain, npm and PyPI taken |
 | **Grind** | No free namespace, and reads as grind culture | every domain but one, npm and PyPI taken |
 | **Gyro** | Crowded, two pronunciations, and says nothing about the mark | GYRO travel-rights platform (gyro.com 1998), Gyro AI Labs, gyro group; npm, PyPI, GitHub org taken; free only on .io/.so/.co/.gg/.sh |
+| **Garth** | Reversed in favour of Galzu | heygarth.ai by Darner AI; every short domain taken; PyPI `garth` is a Garmin Connect client |
 | **Grove, Glade, Gasket** | Domains and packages gone | all `.com/.ai/.dev/.app` taken; Glade is GTK's UI designer and a household brand |
 
 ## Alive
@@ -65,7 +84,6 @@ What that means in practice:
 
 ## Outcome
 
-**Garth** — see the decision above. **Trilobe** survives as the name of the mark
-itself, which is what the drawing is: three lobes. **Germinal** stays on record
-as the fallback if the collision ever becomes a problem, since it is the only
-name screened clean on every namespace.
+**Galzu** — see the decision above. **Trilobe** is the name of the mark itself,
+which is what the drawing is: three lobes. **Germinal** stays on record as the
+fallback, the only name screened clean on every namespace including `.com`.

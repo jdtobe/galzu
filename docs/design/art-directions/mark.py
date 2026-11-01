@@ -1,11 +1,11 @@
-"""The Trilobe mark for Garth: three leaves on a stem, drawn for production.
+"""The Trilobe mark for Galzu: three leaves on a stem, drawn for production.
 
 Trilobe was picked from generate8.py. This rebuilds it as a mark rather than a
 study:
 
 - trilobe-mark.svg     master, 200 box, currentColor, full detail (roots)
 - trilobe-small.svg    the 16 to 24 px cut: fatter leaves, solid stem, no roots
-- lockup-garth.svg     mark set against the wordmark
+- lockup-galzu.svg     mark set against the wordmark
 - sheet.svg            all of the above, white-backed, with size proofs
 
 The master keeps its strokes thin because it is meant to be seen at 48 px and
@@ -75,7 +75,7 @@ def small():
     return "".join(parts)
 
 
-def wordmark(x, y, size, text="garth"):
+def wordmark(x, y, size, text="galzu"):
     """Placeholder lettering. Real work: draw or outline the wordmark."""
     return (f'<text x="{x}" y="{y}" font-family="Helvetica Neue,Helvetica,Arial,'
             f'sans-serif" font-size="{size}" font-weight="500" '
@@ -90,7 +90,7 @@ def standalone(body, box=S, w=None, h=None):
             f'width="{w}" height="{h}" color="{INK}">\n{body}\n</svg>\n')
 
 
-def lockup(text="garth"):
+def lockup(text="galzu"):
     """Mark and wordmark. The mark is aligned to the optical centre of the
     type, not to its box: its ink is bottom-heavy thanks to the stem and roots,
     so the transform is offset down from a naive centring."""
@@ -112,7 +112,7 @@ def sheet(bodies):
         f'<rect width="{w}" height="{h}" fill="#ffffff"/>',
         f'<text x="{pad}" y="34" font-family="Helvetica,Arial,sans-serif" '
         f'font-size="12" letter-spacing="1.4" fill="{INK}" opacity="0.55">'
-        f'GARTH · TRILOBE</text>',
+        f'GALZU · TRILOBE</text>',
     ]
 
     def label(x, y, text, size=12, opacity=1.0):
@@ -161,11 +161,11 @@ def main():
     m, s = master(), small()
     (OUT / "trilobe-mark.svg").write_text(standalone(m))
     (OUT / "trilobe-small.svg").write_text(standalone(s))
-    lock = lockup("garth")
-    (OUT / "lockup-garth.svg").write_text(standalone(lock, w=330, h=110))
+    lock = lockup("galzu")
+    (OUT / "lockup-galzu.svg").write_text(standalone(lock, w=330, h=110))
     (OUT / "sheet.svg").write_text(sheet({"master": m, "small": s, "lockup": lock}))
     print("wrote mark/: trilobe-mark.svg, trilobe-small.svg, "
-          "lockup-garth.svg, sheet.svg")
+          "lockup-galzu.svg, sheet.svg")
 
 
 if __name__ == "__main__":

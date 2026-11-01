@@ -1,11 +1,11 @@
-Garth provisional silhouette
----------------------------
-Original SVG artwork created for this project. It replaces the previous
-third-party Avataaars avatar; no Avataaars paths or artwork are included.
-Right-facing side profile: one foreground color, transparent negative space,
-long hair and glasses, no background tile.
-The sidebar uses the SVG as a CSS mask so its color follows the theme.
-This is not official Wayne's World artwork or a claim of affiliation.
+Galzu mark (Trilobe)
+--------------------
+Original SVG artwork created for this project: three leaves on a stem, from
+docs/design/art-directions/mark/trilobe-small.svg. It replaces the previous
+third-party Avataaars avatar and the provisional profile silhouette; no
+third-party paths or artwork are included.
+Three leaves on a stem, one colour, no background tile. The sidebar uses the
+SVG as a CSS mask so its colour follows the theme.
 
 Sessions icon
 -------------

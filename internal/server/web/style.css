@@ -43,7 +43,7 @@ h3 { font-size: 16px; }
 [hidden] { display: none !important; }
 .rail { position: fixed; z-index: 5; inset: 0 auto 0 0; width: var(--rail-width); background: var(--color-soft); border-right: 1px solid var(--color-border); display: flex; flex-direction: column; align-items: center; padding: 25px 8px 18px; }
 .brand { width: 46px; height: 46px; display: grid; place-items: center; flex-shrink: 0; border-radius: 8px; text-decoration: none; margin-bottom: 31px; }
-.brand-mark { display: block; width: 100%; height: 100%; background: var(--color-primary); -webkit-mask: url('/garth-mark.svg') center / contain no-repeat; mask: url('/garth-mark.svg') center / contain no-repeat; }
+.brand-mark { display: block; width: 100%; height: 100%; background: var(--color-primary); -webkit-mask: url('/galzu-mark.svg') center / contain no-repeat; mask: url('/galzu-mark.svg') center / contain no-repeat; }
 .rail-link { border: 0; padding: 10px 5px; width: 100%; font-size: 10px; background: transparent; color: var(--color-primary); }
 .rail-link svg { display: block; width: 23px; height: 23px; margin: 0 auto 7px; }
 .rail-footer { margin-top: auto; color: var(--color-muted); font-size: 9px; text-align: center; line-height: 1.9; }

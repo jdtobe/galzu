@@ -1,4 +1,4 @@
-module github.com/jdtobe/garth
+module github.com/jdtobe/galzu
 
 go 1.27.2
 

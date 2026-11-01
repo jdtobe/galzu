@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jdtobe/garth/internal/ollama"
-	"github.com/jdtobe/garth/internal/store"
+	"github.com/jdtobe/galzu/internal/ollama"
+	"github.com/jdtobe/galzu/internal/store"
 )
 
 func promptText(messages []ollama.Message) string {

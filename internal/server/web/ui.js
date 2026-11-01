@@ -1,5 +1,5 @@
 // Pure display rules, shared with the UI tests. No model output is interpreted as HTML.
-const GarthUI = {
+const GalzuUI = {
   agentState(agent, activity = {}, paused = false) {
     if (agent.status === 'error') return {label:'Needs attention', tone:'warning'};
     if (activity.state === 'retrying') return {label:'Retrying', tone:'warning'};
@@ -28,4 +28,4 @@ const GarthUI = {
     return `${activity.reuse_percent || 0}% · ${bytes(activity.reused_bytes)} of ${bytes(activity.prompt_bytes)} bytes`;
   }
 };
-if (typeof module !== 'undefined') module.exports = GarthUI;
+if (typeof module !== 'undefined') module.exports = GalzuUI;

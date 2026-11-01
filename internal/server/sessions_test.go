@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jdtobe/garth/internal/herd"
-	"github.com/jdtobe/garth/internal/store"
+	"github.com/jdtobe/galzu/internal/herd"
+	"github.com/jdtobe/galzu/internal/store"
 )
 
 func TestSessionLibraryAPI(t *testing.T) {

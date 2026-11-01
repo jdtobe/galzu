@@ -5,7 +5,7 @@ A local, social-only proof of concept for an agent herd. It does not provide ext
 Start Ollama separately, install a model that supports the required JSON responses, and run:
 
 ```sh
-go run ./cmd/garth
+go run ./cmd/galzu
 ```
 
 Open http://127.0.0.1:8080. The Sessions library lists saved runs with their name, goal preview, status, agent count, and last recorded event time. Choose New session, configure a goal and exactly one leader, and give each agent an installed Ollama model. Names are optional and can be changed later; unnamed runs use a goal preview in the library. The library is paginated, with an explicit Refresh button; activity can change page ordering. You can also open a session by ID from the library.

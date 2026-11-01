@@ -3,8 +3,8 @@ package herd
 import (
 	"context"
 	"fmt"
-	"github.com/jdtobe/garth/internal/ollama"
-	"github.com/jdtobe/garth/internal/store"
+	"github.com/jdtobe/galzu/internal/ollama"
+	"github.com/jdtobe/galzu/internal/store"
 	"path/filepath"
 	"strings"
 	"testing"
