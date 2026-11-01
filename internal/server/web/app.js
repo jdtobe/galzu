@@ -95,7 +95,8 @@ async function refreshFindings() {
     const session = finding.session_name || finding.session_goal.slice(0,80);
     top.append(element('span','eyebrow',session), element('span',`decision-status ${finding.status}`,finding.status));
     const claim = element('h2','',finding.claim);
-    const meta = element('p','finding-card-meta',`${finding.author_name || finding.author_id} · ${(finding.evidence || []).length} evidence · ${(finding.positions || []).filter(p=>p.choice==='agree').length} agree · ${(finding.positions || []).filter(p=>p.choice==='disagree').length} disagree`);
+    const reviews = (finding.positions || []).filter(p => p.agent_id !== finding.author_id).length;
+    const meta = element('p','finding-card-meta',`${finding.author_name || finding.author_id} · ${(finding.evidence || []).length} evidence · ${(finding.positions || []).filter(p=>p.choice==='agree').length} agree · ${(finding.positions || []).filter(p=>p.choice==='disagree').length} disagree${reviews >= 2 ? ' · peer reviewed' : ''}`);
     const open = element('button','','Open session');
     open.type = 'button';
     open.onclick = () => openSession(finding.session_id).catch(report);
