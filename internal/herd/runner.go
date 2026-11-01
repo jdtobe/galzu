@@ -70,6 +70,7 @@ type run struct {
 	wakes        map[string]chan struct{}
 	retries      map[string]chan struct{}
 	sem          chan struct{}
+	solo         bool
 	storageError string
 }
 
@@ -116,7 +117,7 @@ func (r *Runner) start(ctx context.Context, id string, resume bool) error {
 		s.Status = "running"
 	}
 	c, cancel := context.WithCancel(context.Background())
-	x := &run{ctx: c, cancel: cancel, paused: s.Status != "running", wakes: map[string]chan struct{}{}, retries: map[string]chan struct{}{}, sem: make(chan struct{}, s.Concurrency)}
+	x := &run{ctx: c, cancel: cancel, paused: s.Status != "running", wakes: map[string]chan struct{}{}, retries: map[string]chan struct{}{}, sem: make(chan struct{}, s.Concurrency), solo: len(agents) == 1}
 	if x.paused {
 		x.resume = make(chan struct{})
 	}
@@ -141,7 +142,7 @@ func (r *Runner) start(ctx context.Context, id string, resume bool) error {
 		ch := make(chan struct{}, 1)
 		x.wakes[a.ID] = ch
 		x.retries[a.ID] = make(chan struct{}, 1)
-		go r.worker(x, s, a, checkpoints[a.ID], ch)
+		go r.worker(x, s, a, checkpoints[a.ID], ch, x.solo)
 		ch <- struct{}{}
 	}
 	r.changed(id)
@@ -304,7 +305,7 @@ func (r *Runner) retryLocked(sessionID string, x *run, s store.Session, a store.
 	ch := make(chan struct{}, 1)
 	x.wakes[a.ID] = ch
 	x.retries[a.ID] = make(chan struct{}, 1)
-	go r.worker(x, s, a, last, ch)
+	go r.worker(x, s, a, last, ch, x.solo)
 	ch <- struct{}{}
 	r.changed(sessionID)
 	return nil
@@ -364,7 +365,15 @@ func (r *Runner) wait(x *run) bool {
 		}
 	}
 }
-func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake <-chan struct{}) {
+
+// soloTurnLimit bounds how many turns one agent may take without a peer or a
+// human message. A sole agent has nobody to wake it, so the harness lets it keep
+// its own thread going after a response; rest still stops it, and a human
+// message starts a fresh allowance.
+const soloTurnLimit = 12
+
+func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake <-chan struct{}, solo bool) {
+	selfTurns := 0
 	r.mu.Lock()
 	retry := x.retries[a.ID]
 	r.mu.Unlock()
@@ -424,14 +433,25 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			last = m.ID
 		}
 		if !trigger {
-			if err := r.store.SetCheckpoint(x.ctx, s.ID, a.ID, last); err != nil {
-				r.StorageFailure(s.ID, err)
-				return
+			selfContinue := false
+			if solo && selfTurns < soloTurnLimit {
+				r.mu.Lock()
+				selfContinue = r.activity[s.ID][a.ID].LastOutcome == "responded"
+				r.mu.Unlock()
 			}
-			if more {
-				r.Notify(s.ID)
+			if !selfContinue {
+				if err := r.store.SetCheckpoint(x.ctx, s.ID, a.ID, last); err != nil {
+					r.StorageFailure(s.ID, err)
+					return
+				}
+				if more {
+					r.Notify(s.ID)
+				}
+				continue
 			}
-			continue
+			selfTurns++
+		} else {
+			selfTurns = 0
 		}
 		all, err := r.store.Messages(x.ctx, s.ID, 0)
 		if err != nil {

@@ -213,6 +213,9 @@ func turnPacket(in promptInput) string {
 	} else {
 		b.WriteString(in.Memory)
 	}
+	if len(in.Agents) == 1 {
+		b.WriteString("\nYou are the only agent in this session. No peer will answer; continue the work until you rest.")
+	}
 	b.WriteString("\nRoster (id | name | role | status | activity):")
 	agents := append([]store.Agent(nil), in.Agents...)
 	sort.Slice(agents, func(i, j int) bool { return agents[i].ID < agents[j].ID })
