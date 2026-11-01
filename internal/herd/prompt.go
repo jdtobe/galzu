@@ -289,6 +289,8 @@ func turnPacket(in promptInput) string {
 	switch {
 	case in.Plan == nil:
 		b.WriteString("\nPlan: none. Propose one with the plan action: steps, definition of done, acceptance criteria.")
+	case in.Plan.Status == "done":
+		fmt.Fprintf(&b, "\nPlan (implemented v%d): %s\nThat plan is complete. Do not treat it as pending work; propose a new plan only for the next increment.", in.Plan.Version, in.Plan.Body)
 	case in.Plan.Status == "approved":
 		fmt.Fprintf(&b, "\nPlan (approved v%d, the working plan): %s\nDo not propose a replacement unless the human asks for one or you have found a specific defect. If you do propose one, say what changed and why.", in.Plan.Version, in.Plan.Body)
 	default:

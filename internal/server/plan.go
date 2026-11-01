@@ -66,3 +66,30 @@ func (v *server) decidePlan(w http.ResponseWriter, r *http.Request) {
 	v.notify(id)
 	respond(w, 200, map[string]any{"version": input.Version, "approved": input.Approve})
 }
+
+// completePlan is the human saying the approved work is implemented. The
+// harness cannot observe that, so it records the claim rather than inferring it.
+func (v *server) completePlan(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var input struct {
+		Version int `json:"version"`
+	}
+	if e := decode(w, r, &input); e != nil || input.Version < 1 {
+		http.Error(w, "version is invalid", 400)
+		return
+	}
+	if err := v.s.CompletePlan(r.Context(), id, input.Version, "human"); err != nil {
+		if errors.Is(err, store.ErrPlanNotApproved) {
+			http.Error(w, "that plan version is not approved", http.StatusConflict)
+			return
+		}
+		failure(w, err)
+		return
+	}
+	if _, err := v.s.AppendMessage(r.Context(), id, "", fmt.Sprintf("Plan v%d marked implemented.", input.Version)); err != nil {
+		failure(w, err)
+		return
+	}
+	v.notify(id)
+	respond(w, 200, map[string]any{"version": input.Version, "status": "done"})
+}

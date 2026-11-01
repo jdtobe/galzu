@@ -450,6 +450,20 @@ async function renderDecisions(sid) {
     section.append(element('h3','',`Plan v${plan.version}`), element('span',`decision-status ${plan.status}`,plan.status));
     section.append(element('pre','plan-body',plan.body));
     if (plan.note) section.append(element('p','decision-note',`Note: ${plan.note}`));
+    if (plan.status === 'approved') {
+      const form = element('form','plan-actions');
+      const done = element('button','','Mark implemented');
+      done.type = 'button'; done.dataset.control = 'plan-done';
+      done.onclick = async () => {
+        done.disabled = true;
+        try {
+          await api(`/api/sessions/${encodeURIComponent(sid)}/plan/done`, post({version:plan.version}));
+          decisionsSignature = ''; await refresh();
+        } catch (error) { report(error); done.disabled = false; }
+      };
+      form.append(done);
+      section.append(form);
+    }
     if (plan.status === 'pending') {
       const form = element('form','plan-actions');
       const label = element('label','', 'Note to the herd (required to reject)');

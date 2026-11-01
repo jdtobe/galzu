@@ -55,3 +55,34 @@ func TestPlanDecisionOnWrongVersionConflicts(t *testing.T) {
 		t.Fatalf("%d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestPlanCompletionFlow(t *testing.T) {
+	h, s := newScopeServer(t, "s")
+	if _, err := s.ProposePlan(context.Background(), "s", "a", "v1"); err != nil {
+		t.Fatal(err)
+	}
+	if w := do(t, h, "POST", "/api/sessions/s/plan/done", `{"version":1}`); w.Code != 409 {
+		t.Fatalf("completed before approval: %d: %s", w.Code, w.Body.String())
+	}
+	if w := do(t, h, "POST", "/api/sessions/s/plan/decide", `{"version":1,"approve":true}`); w.Code != 200 {
+		t.Fatalf("%d: %s", w.Code, w.Body.String())
+	}
+	if w := do(t, h, "POST", "/api/sessions/s/plan/done", `{"version":1}`); w.Code != 200 {
+		t.Fatalf("%d: %s", w.Code, w.Body.String())
+	}
+	current, ok, err := s.CurrentPlan(context.Background(), "s")
+	if err != nil || !ok || current.Status != "done" {
+		t.Fatalf("%+v %v %v", current, ok, err)
+	}
+	if w := do(t, h, "POST", "/api/sessions/s/plan/done", `{"version":1}`); w.Code != 409 {
+		t.Fatalf("completed twice: %d: %s", w.Code, w.Body.String())
+	}
+	messages, err := s.Messages(context.Background(), "s", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := messages[len(messages)-1]
+	if last.AgentID != "" || last.Body != "Plan v1 marked implemented." {
+		t.Fatalf("announcement = %+v", last)
+	}
+}

@@ -166,3 +166,15 @@ func TestFindingsAppearWithTallyAndOwnPosition(t *testing.T) {
 		}
 	}
 }
+
+func TestDonePlanIsHistoricalNotPendingWork(t *testing.T) {
+	session, me, peers := fixture()
+	plan := &store.Plan{Version: 3, Status: "done", Body: "1. ship it"}
+	text := promptText(renderPrompt(promptInput{Session: session, Agent: me, Agents: peers, Plan: plan}).Tail())
+	if !strings.Contains(text, "Plan (implemented v3)") || !strings.Contains(text, "That plan is complete") {
+		t.Fatalf("done plan rendered as current work:\n%s", text)
+	}
+	if strings.Contains(text, "pending review") || strings.Contains(text, "the working plan") {
+		t.Fatalf("done plan looks pending:\n%s", text)
+	}
+}

@@ -25,6 +25,7 @@ type Plan struct {
 }
 
 var ErrPlanNotPending = errors.New("plan is not pending review")
+var ErrPlanNotApproved = errors.New("plan is not approved")
 
 const MaxPlanBytes = 8 << 10
 
@@ -88,21 +89,38 @@ func (s *Store) DecidePlan(ctx context.Context, sessionID string, version int, a
 	return nil
 }
 
-// CurrentPlan returns the approved plan, or the pending one when nothing has
-// been approved yet. ok is false when the session has no plan at all.
+// CompletePlan marks an approved plan implemented. It is the human closing the
+// loop; the harness does not infer implementation from conversation.
+func (s *Store) CompletePlan(ctx context.Context, sessionID string, version int, decidedBy string) error {
+	row, err := s.db.ExecContext(ctx, `UPDATE plans SET status='done',decided_at=?,decided_by=? WHERE session_id=? AND version=? AND status='approved'`,
+		time.Now().UTC().Format(time.RFC3339Nano), decidedBy, sessionID, version)
+	if err != nil {
+		return err
+	}
+	n, err := row.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return ErrPlanNotApproved
+	}
+	return nil
+}
+
+// CurrentPlan returns the approved plan, or the pending one, or the last plan
+// the human marked implemented. ok is false when the session has no plan at all.
+// A done plan is historical, not authoritative: the prompt says so.
 func (s *Store) CurrentPlan(ctx context.Context, sessionID string) (Plan, bool, error) {
-	plan, err := s.planWithStatus(ctx, sessionID, "approved")
-	if err == nil {
-		return plan, true, nil
+	for _, status := range []string{"approved", "pending", "done"} {
+		plan, err := s.planWithStatus(ctx, sessionID, status)
+		if err == nil {
+			return plan, true, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return Plan{}, false, err
+		}
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return Plan{}, false, err
-	}
-	plan, err = s.planWithStatus(ctx, sessionID, "pending")
-	if errors.Is(err, sql.ErrNoRows) {
-		return Plan{}, false, nil
-	}
-	return plan, err == nil, err
+	return Plan{}, false, nil
 }
 
 func (s *Store) planWithStatus(ctx context.Context, sessionID, status string) (Plan, error) {

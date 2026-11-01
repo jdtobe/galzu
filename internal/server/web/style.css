@@ -233,6 +233,7 @@ summary { cursor: pointer; }
 .decision-status.pending { color: var(--color-warning); }
 .decision-status.approved, .decision-status.passed { color: var(--color-primary); }
 .decision-status.rejected, .decision-status.failed { color: var(--color-error); }
+.decision-status.done { color: var(--color-muted); }
 .plan-body { margin: 8px 0; padding: 10px 12px; background: var(--color-soft); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 11.5px; line-height: 1.5; max-height: 180px; overflow: auto; }
 .decision-note { margin: 6px 0; color: var(--color-muted); font-size: 11px; }
 .plan-actions label { display: block; color: var(--color-muted); font-size: 11px; margin-bottom: 8px; }
