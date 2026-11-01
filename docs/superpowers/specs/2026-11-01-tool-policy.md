@@ -1,6 +1,8 @@
 # Tool policy and approvals
 
-Status: **proposed; decisions settled 2026-11-01, not implemented.**
+Status: **decisions settled 2026-11-01. The gate is implemented; execution is
+not.** `internal/toolgate` evaluates requests, and the scope, arm, disarm,
+approval and audit endpoints exist. No agent action reaches the gate yet.
 
 This specifies the boundary that `internal/networktool` must sit behind before any
 agent can use it. It answers the first open question in

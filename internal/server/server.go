@@ -47,6 +47,12 @@ func New(s *store.Store, r *herd.Runner) http.Handler {
 	m.HandleFunc("POST /api/sessions/{id}/agents/{agent}/settings", v.agentSettings)
 	m.HandleFunc("POST /api/sessions/{id}/agents/{agent}/retry", v.retryAgent)
 	m.HandleFunc("GET /api/sessions/{id}/events", v.events)
+	m.HandleFunc("GET /api/sessions/{id}/scope", v.getScope)
+	m.HandleFunc("POST /api/sessions/{id}/scope", v.grantScope)
+	m.HandleFunc("POST /api/sessions/{id}/arm", v.armScope)
+	m.HandleFunc("POST /api/sessions/{id}/disarm", v.disarmScope)
+	m.HandleFunc("POST /api/sessions/{id}/approvals", v.approveHost)
+	m.HandleFunc("GET /api/sessions/{id}/audit", v.getAudit)
 	files, _ := fs.Sub(web, "web")
 	m.Handle("/", http.FileServer(http.FS(files)))
 	return m

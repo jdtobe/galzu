@@ -45,6 +45,11 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 		`DELETE FROM delivery_baselines WHERE agent_id IN (SELECT id FROM agents WHERE session_id=?)`,
 		`DELETE FROM agent_failures WHERE session_id=?`,
 		`DELETE FROM network_policies WHERE session_id=?`,
+		// The scope is configuration and goes with the session. Tool requests,
+		// approvals and the audit trail deliberately do not: deleting a session
+		// must not erase what its agents did to the network.
+		`DELETE FROM tool_envelope_entries WHERE session_id=?`,
+		`DELETE FROM tool_envelopes WHERE session_id=?`,
 		`DELETE FROM inference_policies WHERE session_id=?`,
 		`DELETE FROM session_names WHERE session_id=?`,
 		`DELETE FROM events WHERE session_id=?`,

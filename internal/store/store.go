@@ -101,6 +101,9 @@ func Open(path string) (*Store, error) {
 CREATE INDEX IF NOT EXISTS events_session_activity ON events(session_id,created_at);
 CREATE INDEX IF NOT EXISTS agents_session ON agents(session_id);`)
 	}
+	if err == nil {
+		err = toolsSchema(db)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
