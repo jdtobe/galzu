@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1440" height="1440" viewBox="0 0 1440 1440" color="#286450">
+  <title>Garth · three profile mark finalists</title>
+  <desc>Classic, Backstage, and Stamp, shown large and at 46, 38, and 24 pixels on light and dark backgrounds. All artwork uses one foreground color and transparent cutouts.</desc>
+  <defs>
+    <symbol id="classic" viewBox="0 0 64 64" fill="none">
+      <path fill="currentColor" fill-rule="evenodd" d="
+        M29 4 C17 4 10 14 10 27 C10 41 8 51 4 59
+        C13 62 22 59 28 54 L31 50 L36 51 H42
+        Q46 51 46 48.5 L45 46 Q46.5 45.5 46.5 44.2
+        L45.8 43.2 L46.8 42.2 Q47.5 41.5 46.5 40.5
+        L46 38.5 L49.5 38 Q52 37.5 50 35.5
+        L47 32.5 Q45.5 29.5 46 26 L46 21
+        C46.5 11 40 4 29 4 Z
+        M30 17 Q32 18 33 20 L34 18 Q37 21 42 21
+        L44 24 L44.5 28 L44 32 L43 35 L42.5 38.5
+        L44 41 L42.5 43.5 L43 45.5 L41.5 47 H36.5
+        L31 44.5 L27 38 L29 27 Z
+        M27 29 C22 27 22 35 26 36 L27 33 Q25 32 27 29 Z
+        M16 32 C17 43 15 50 11 56 C17 53 20 44 19 35 Z
+      "/>
+      <g stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="32.5" y="24.5" width="13" height="9.5" rx="2.5"/><path d="M26 25.5 L32.5 27.5"/></g>
+    </symbol>
+    <symbol id="backstage" viewBox="0 0 64 64" fill="none">
+      <path fill="currentColor" fill-rule="evenodd" d="
+        M30 5 C20 2 12 8 9 19 L7 19 L8.5 28 L6.5 29 L8 36
+        C8 45 5 53 3 58 L12 56 L11 60 L22 57 L25 59 L31 51
+        L36 51 H42 Q46 51 46 48.5 L45 46
+        Q46.5 45.5 46.5 44 L45.5 43 L47 42 Q47.5 41.5 46.5 40.5
+        L46 38.5 L49.5 38 Q52 37.5 50 35.5
+        L47 32.5 Q46 29.5 46.5 26 L46.5 22
+        C48 12 41 5 30 5 Z
+        M29 18 L32 21 L33 18 L37 22 L39 20 L43 23
+        L44 28 L44 33 L43 36 L43 39 L44 41
+        L42 44 L42.5 46 L41 47 H36 L30 43 L26 37 L28 28 Z
+        M26.5 29 C22 27.5 22 34.5 26 35.5 L26.5 33 Q24.5 32 26.5 29 Z
+        M14 31 C16 40 13 49 9 54 C15 51 18 42 17 34 Z
+        M21 39 C22 45 20 51 17 56 C23 53 25 46 24 42 Z
+      "/>
+      <g stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"><path d="M35.5 24.5 H42.5 Q46 24.5 46 28 V30.5 Q45.5 34 42 34 H36 Q32 34 32 30 V28 Q32 24.5 35.5 24.5 Z"/><path d="M26 25 L32 27"/></g>
+    </symbol>
+    <symbol id="stamp" viewBox="0 0 64 64" fill="none">
+      <path fill="currentColor" fill-rule="evenodd" d="
+        M28 5 C17 5 10 15 10 29 C10 41 7 52 4 59
+        H21 L31 50 H42 Q45.5 50 45.5 47 L44.5 45
+        Q46.5 44 46 42.5 L45 41.5 V39 L49.5 38
+        Q52 37 50 35 L47 32 V24 C47 12 40 5 28 5 Z
+        M29 18 Q35 23 42 22 L44 25 V32
+        L42.5 36 L43 40 L42 42 L42.5 45 H36
+        L29 41 L26 34 Z
+      "/>
+      <g stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="32" y="24" width="13.5" height="10" rx="2"/><path d="M25 25 L32 27"/></g>
+    </symbol>
+  </defs>
+  <rect width="1440" height="1440" fill="#f1f3ef"/>
+  <g font-family="Arial, sans-serif" transform="translate(0 200)">
+    <text x="40" y="48" font-size="11" letter-spacing="2" fill="#66756c">GARTH / PROFILE STUDIES</text>
+    <text x="40" y="91" font-size="32" font-weight="600" fill="#243630">Three directions. Same rocker.</text>
+    <text x="40" y="120" font-size="14" fill="#66756c">Lower-set features, defined chin, long hair, and glasses. One foreground color + transparency.</text>
+    <g>
+      <rect x="40" y="150" width="440" height="700" rx="16" fill="#fff" stroke="#dce4db"/>
+      <text x="64" y="191" font-size="22" font-weight="600" fill="#243630">A / Classic</text>
+      <text x="64" y="219" font-size="13" fill="#66756c">Closest to the profile you liked. Softer details.</text>
+      <use xlink:href="#classic" x="120" y="242" width="280" height="280"/>
+      <path d="M64 548 H456" stroke="#e3e9e2"/>
+      <text x="64" y="578" font-size="11" fill="#66756c">SIDEBAR SCALE</text>
+      <use xlink:href="#classic" x="141" y="599" width="46" height="46"/>
+      <use xlink:href="#classic" x="235" y="603" width="38" height="38"/>
+      <use xlink:href="#classic" x="330" y="610" width="24" height="24"/>
+      <g font-size="10" fill="#66756c" text-anchor="middle"><text x="164" y="667">46 px</text><text x="254" y="667">38 px</text><text x="342" y="667">24 px</text></g>
+      <rect x="64" y="690" width="392" height="108" rx="10" fill="#173e33"/>
+      <text x="80" y="711" font-size="9" letter-spacing="1" fill="#b6d3c6">REVERSED ON DARK</text>
+      <use xlink:href="#classic" x="141" y="728" width="46" height="46" color="#f8faf7"/>
+      <use xlink:href="#classic" x="235" y="732" width="38" height="38" color="#f8faf7"/>
+      <use xlink:href="#classic" x="330" y="739" width="24" height="24" color="#f8faf7"/>
+      <text x="64" y="826" font-size="11" fill="#66756c">Quietest evolution of the current mark.</text>
+    </g>
+    <g transform="translate(460)">
+      <rect x="40" y="150" width="440" height="700" rx="16" fill="#fff" stroke="#dce4db"/>
+      <text x="64" y="191" font-size="22" font-weight="600" fill="#243630">B / Backstage</text>
+      <text x="64" y="219" font-size="13" fill="#66756c">Shaggier hair. More character. A little louder.</text>
+      <use xlink:href="#backstage" x="120" y="242" width="280" height="280"/>
+      <path d="M64 548 H456" stroke="#e3e9e2"/>
+      <text x="64" y="578" font-size="11" fill="#66756c">SIDEBAR SCALE</text>
+      <use xlink:href="#backstage" x="141" y="599" width="46" height="46"/>
+      <use xlink:href="#backstage" x="235" y="603" width="38" height="38"/>
+      <use xlink:href="#backstage" x="330" y="610" width="24" height="24"/>
+      <g font-size="10" fill="#66756c" text-anchor="middle"><text x="164" y="667">46 px</text><text x="254" y="667">38 px</text><text x="342" y="667">24 px</text></g>
+      <rect x="64" y="690" width="392" height="108" rx="10" fill="#173e33"/>
+      <text x="80" y="711" font-size="9" letter-spacing="1" fill="#b6d3c6">REVERSED ON DARK</text>
+      <use xlink:href="#backstage" x="141" y="728" width="46" height="46" color="#f8faf7"/>
+      <use xlink:href="#backstage" x="235" y="732" width="38" height="38" color="#f8faf7"/>
+      <use xlink:href="#backstage" x="330" y="739" width="24" height="24" color="#f8faf7"/>
+      <text x="64" y="826" font-size="11" fill="#66756c">Strongest rocker personality.</text>
+    </g>
+    <g transform="translate(920)">
+      <rect x="40" y="150" width="440" height="700" rx="16" fill="#fff" stroke="#dce4db"/>
+      <text x="64" y="191" font-size="22" font-weight="600" fill="#243630">C / Stamp</text>
+      <text x="64" y="219" font-size="13" fill="#66756c">Fewer details. Bolder shape. More logo-like.</text>
+      <use xlink:href="#stamp" x="120" y="242" width="280" height="280"/>
+      <path d="M64 548 H456" stroke="#e3e9e2"/>
+      <text x="64" y="578" font-size="11" fill="#66756c">SIDEBAR SCALE</text>
+      <use xlink:href="#stamp" x="141" y="599" width="46" height="46"/>
+      <use xlink:href="#stamp" x="235" y="603" width="38" height="38"/>
+      <use xlink:href="#stamp" x="330" y="610" width="24" height="24"/>
+      <g font-size="10" fill="#66756c" text-anchor="middle"><text x="164" y="667">46 px</text><text x="254" y="667">38 px</text><text x="342" y="667">24 px</text></g>
+      <rect x="64" y="690" width="392" height="108" rx="10" fill="#173e33"/>
+      <text x="80" y="711" font-size="9" letter-spacing="1" fill="#b6d3c6">REVERSED ON DARK</text>
+      <use xlink:href="#stamp" x="141" y="728" width="46" height="46" color="#f8faf7"/>
+      <use xlink:href="#stamp" x="235" y="732" width="38" height="38" color="#f8faf7"/>
+      <use xlink:href="#stamp" x="330" y="739" width="24" height="24" color="#f8faf7"/>
+      <text x="64" y="826" font-size="11" fill="#66756c">Cleanest at very small sizes.</text>
+    </g>
+    <text x="40" y="888" font-size="12" fill="#66756c">Design options only · the app’s current icon has not changed · individual SVGs have no background.</text>
+  </g>
+</svg>

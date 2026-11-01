@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" color="#286450">
+  <title>B · Backstage profile</title>
+  <path fill="currentColor" fill-rule="evenodd" d="
+    M30 5 C20 2 12 8 9 19 L7 19 L8.5 28 L6.5 29 L8 36
+    C8 45 5 53 3 58 L12 56 L11 60 L22 57 L25 59 L31 51
+    L36 51 H42 Q46 51 46 48.5 L45 46
+    Q46.5 45.5 46.5 44 L45.5 43 L47 42 Q47.5 41.5 46.5 40.5
+    L46 38.5 L49.5 38 Q52 37.5 50 35.5
+    L47 32.5 Q46 29.5 46.5 26 L46.5 22
+    C48 12 41 5 30 5 Z
+    M29 18 L32 21 L33 18 L37 22 L39 20 L43 23
+    L44 28 L44 33 L43 36 L43 39 L44 41
+    L42 44 L42.5 46 L41 47 H36 L30 43 L26 37 L28 28 Z
+    M26.5 29 C22 27.5 22 34.5 26 35.5
+    L26.5 33 Q24.5 32 26.5 29 Z
+    M14 31 C16 40 13 49 9 54 C15 51 18 42 17 34 Z
+    M21 39 C22 45 20 51 17 56 C23 53 25 46 24 42 Z
+  "/>
+  <g stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M35.5 24.5 H42.5 Q46 24.5 46 28 V30.5 Q45.5 34 42 34 H36 Q32 34 32 30 V28 Q32 24.5 35.5 24.5 Z"/>
+    <path d="M26 25 L32 27"/>
+  </g>
+</svg>

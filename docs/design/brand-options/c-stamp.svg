@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" color="#286450">
+  <title>C · Stamp profile</title>
+  <path fill="currentColor" fill-rule="evenodd" d="
+    M28 5 C17 5 10 15 10 29 C10 41 7 52 4 59
+    H21 L31 50 H42 Q45.5 50 45.5 47 L44.5 45
+    Q46.5 44 46 42.5 L45 41.5 V39 L49.5 38
+    Q52 37 50 35 L47 32 V24 C47 12 40 5 28 5 Z
+    M29 18 Q35 23 42 22 L44 25 V32
+    L42.5 36 L43 40 L42 42 L42.5 45 H36
+    L29 41 L26 34 Z
+  "/>
+  <g stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="32" y="24" width="13.5" height="10" rx="2"/>
+    <path d="M25 25 L32 27"/>
+  </g>
+</svg>
