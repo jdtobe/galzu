@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/jdtobe/galzu/internal/ollama"
@@ -13,7 +14,7 @@ import (
 // handleFinding publishes a claim, or revises one and attaches evidence. A
 // finding is not a vote: it stays open and agreement never becomes truth.
 func (r *Runner) handleFinding(s store.Session, a store.Agent, reply ollama.Reply, last int64, memory *string) (bool, error) {
-	claim := strings.TrimSpace(reply.Text)
+	claim := cleanClaim(reply.Text)
 	evidence := strings.TrimSpace(reply.Evidence)
 	if len(claim) > 2048 {
 		return false, &ollama.ValidationError{Reason: "a finding claim must be at most 2048 bytes"}
@@ -66,6 +67,15 @@ func (r *Runner) handleFinding(s store.Session, a store.Agent, reply ollama.Repl
 	}
 	r.notifyLocked(s.ID)
 	return true, nil
+}
+
+// findingPrefix is the heading the harness itself adds to a finding message.
+// Small models sometimes echo it into the claim, which then reads
+// "Finding #4: Finding #4: ..." in the UI and the prompt.
+var findingPrefix = regexp.MustCompile(`(?i)^\s*(?:publishing\s+)?finding\s*#?\d*\s*:\s*`)
+
+func cleanClaim(text string) string {
+	return strings.TrimSpace(findingPrefix.ReplaceAllString(strings.TrimSpace(text), ""))
 }
 
 // handleEndorse records agreement or disagreement. The latest position wins;

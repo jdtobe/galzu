@@ -97,3 +97,15 @@ func TestEndorseRecordsPositionAndRejectsUnknownFinding(t *testing.T) {
 		t.Fatal("endorsed a finding that does not exist")
 	}
 }
+
+func TestEchoedFindingHeadingIsRemovedFromTheClaim(t *testing.T) {
+	if got := cleanClaim("Finding #4: The cache survives a rename."); got != "The cache survives a rename." {
+		t.Fatalf("got %q", got)
+	}
+	if got := cleanClaim("Publishing Finding #12: Claim text."); got != "Claim text." {
+		t.Fatalf("got %q", got)
+	}
+	if got := cleanClaim("Candidate A: a claim"); got != "Candidate A: a claim" {
+		t.Fatalf("removed a meaningful prefix: %q", got)
+	}
+}
