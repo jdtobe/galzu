@@ -1,6 +1,8 @@
 let current = '', stream, status = '', snapshot;
 let refreshSequence = 0, navigationSequence = 0, librarySequence = 0, libraryPage = 0;
 let currentAgents = [], selectedAgent = '', messageFilter = 'all', messageSignature = '';
+let decisionsSignature = '', decisionsSequence = 0, planDecisionBusy = false;
+let scopeSignature = '', scopeSequence = 0;
 let seenLastMessage = 0;
 let librarySearchTimer;
 let armedDeletion = '';
@@ -206,6 +208,256 @@ async function refresh() {
   $('queue-count').textContent = `${queued} queued · ${resting} resting`;
   $('inference-note').textContent = active.length ? `${active.slice(0,3).map(a => a.name).join(', ')}${active.length > 3 ? ` + ${active.length-3} more` : ''} ${active.length === 1 ? 'is' : 'are'} in inference${status === 'paused' ? ' · session paused' : ''}` : status === 'paused' ? 'Session paused · pending messages are preserved' : 'No requests currently in inference';
   renderMessages();
+  renderDecisions(id).catch(report);
+  renderScope(id).catch(report);
+}
+
+// renderScope is the human side of the tool gate: grant a scope, arm it with a
+// written damage line, disarm it, and read the audit. It never sends a tool
+// request; agents have no tool action yet. Docs:
+// docs/superpowers/specs/2026-11-01-tool-policy.md
+async function renderScope(sid) {
+  const sequence = ++scopeSequence;
+  const data = await api(`/api/sessions/${encodeURIComponent(sid)}/scope`);
+  if (sid !== current || sequence !== scopeSequence) return;
+  const signature = JSON.stringify(data);
+  if (signature === scopeSignature) return;
+  scopeSignature = signature;
+  const envelope = data.envelope || null;
+  $('scope-status').textContent = !envelope ? 'not granted' : `${envelope.armed ? 'armed' : 'disarmed'} · v${envelope.version}`;
+  const body = $('scope-body');
+  // The form is ordinary input: keep what the operator typed if the panel
+  // rebuilds, because a new audit entry must not eat a half-written grant.
+  const typed = [...body.querySelectorAll('[data-field]')].map(node => [node.dataset.field, node.value]);
+  body.replaceChildren();
+
+  if (!envelope) {
+    body.append(element('p','muted','No scope granted. Scope is deny-by-default: without an envelope no agent request can be allowed.'));
+  } else {
+    const facts = element('dl','scope-facts');
+    const fact = (term,value) => facts.append(element('dt','',term),element('dd','',value));
+    fact('Version',String(envelope.version));
+    fact('State',envelope.armed ? 'armed' : 'disarmed');
+    fact('Damage line',envelope.damage_line);
+    fact('Budget',`${envelope.total_budget} total · ${envelope.safe_budget} safe · ${envelope.unsafe_budget} unsafe`);
+    fact('Minimum interval',`${envelope.rate_interval_ms} ms`);
+    fact('Max body',`${envelope.max_body_bytes} bytes`);
+    body.append(facts);
+    for (const entry of envelope.entries || []) {
+      const row = element('p','scope-entry-line');
+      row.append(element('strong','',entry.name), element('span','',`${entry.ips.join(', ')} : ${entry.ports.join(', ')}`),
+        element('span','muted',`${entry.methods.join(', ') || 'no methods'}${entry.path_prefix ? ` · ${entry.path_prefix}` : ''}`));
+      body.append(row);
+    }
+    const actions = element('div','scope-actions');
+    const arm = element('button','', envelope.armed ? 'Disarm · revoke now' : 'Arm scope');
+    arm.type = 'button';
+    if (!envelope.armed) arm.className = 'primary';
+    arm.onclick = async () => {
+      arm.disabled = true;
+      try {
+        await api(`/api/sessions/${encodeURIComponent(sid)}/${envelope.armed ? 'disarm' : 'arm'}`, post({}));
+        scopeSignature = ''; await refresh();
+      } catch (error) { report(error); arm.disabled = false; }
+    };
+    actions.append(arm);
+    body.append(actions);
+    if (!envelope.armed) body.append(element('p','muted','Disarming stops new requests immediately. A request already in flight is allowed to finish.'));
+  }
+
+  const audit = data.audit || [];
+  if (audit.length) {
+    const trail = element('details','scope-audit');
+    trail.append(element('summary','',`Audit trail · ${audit.length} ${audit.length === 1 ? 'entry' : 'entries'}`));
+    for (const record of audit.slice().reverse().slice(0, 200)) {
+      const line = element('p','');
+      line.append(element('time','',timeLabel(record.created_at)), element('strong','',` ${record.kind} `), document.createTextNode(record.detail));
+      trail.append(line);
+    }
+    body.append(trail);
+  }
+
+  const form = element('form','scope-form');
+  form.append(element('h3','', envelope ? 'Grant a new version' : 'Grant a scope'));
+  const damage = field(form,'Damage line','damage_line','damage-line',envelope?.damage_line || 'A statement of what lasting damage an allowed request could cause.');
+  damage.querySelector('textarea').maxLength = 1024; damage.querySelector('textarea').required = true;
+  const budgets = element('div','scope-budget-row');
+  numberField(budgets,'Total','total_budget',envelope?.total_budget ?? 100);
+  numberField(budgets,'Safe','safe_budget',envelope?.safe_budget ?? 90);
+  numberField(budgets,'Unsafe','unsafe_budget',envelope?.unsafe_budget ?? 10);
+  numberField(budgets,'Min interval (ms)','rate_interval_ms',envelope?.rate_interval_ms || 1000);
+  numberField(budgets,'Max body (bytes)','max_body_bytes',envelope?.max_body_bytes ?? 0);
+  form.append(budgets);
+  const entries = element('div','scope-entries');
+  entries.append(element('p','field-hint','One entry per allowed host. Names, ports and IPs are required; methods are a comma list such as GET,HEAD.'));
+  const addEntry = (entry = {}) => {
+    const row = element('div','scope-entry');
+    textField(row,'Name','entry-name',entry.name || '');
+    textField(row,'IPs','entry-ips',(entry.ips || []).join(', '));
+    textField(row,'Ports','entry-ports',(entry.ports || []).join(', '));
+    textField(row,'Methods','entry-methods',(entry.methods || []).join(', '));
+    textField(row,'Path prefix','entry-path',entry.path_prefix || '');
+    const remove = element('button','scope-remove','Remove');
+    remove.type = 'button';
+    remove.onclick = () => { if (entries.querySelectorAll('.scope-entry').length > 1) row.remove(); };
+    row.append(remove); entries.append(row);
+  };
+  const seed = envelope?.entries?.length ? envelope.entries : [{}];
+  for (const entry of seed) addEntry(entry);
+  const add = element('button','','Add entry');
+  add.type = 'button'; add.onclick = () => addEntry();
+  const grant = element('button','primary', envelope ? 'Save new version' : 'Grant scope');
+  grant.type = 'submit';
+  const status = element('span','scope-result');
+  status.setAttribute('role','status');
+  const actions = element('div','scope-actions');
+  actions.append(grant);
+  form.append(entries,add,element('p','field-hint','Granting always lands disarmed: a new scope never silently re-arms a session.'));
+  form.append(actions,status);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const rows = [...entries.querySelectorAll('.scope-entry')];
+    const payload = {
+      damage_line: form.querySelector('[name=damage_line]').value.trim(),
+      total_budget: Number(form.querySelector('[name=total_budget]').value),
+      safe_budget: Number(form.querySelector('[name=safe_budget]').value),
+      unsafe_budget: Number(form.querySelector('[name=unsafe_budget]').value),
+      rate_interval_ms: Number(form.querySelector('[name=rate_interval_ms]').value),
+      max_body_bytes: Number(form.querySelector('[name=max_body_bytes]').value),
+      entries: rows.map(row => ({
+        name: row.querySelector('[name=entry-name]').value.trim(),
+        ips: csv(row.querySelector('[name=entry-ips]').value),
+        ports: csv(row.querySelector('[name=entry-ports]').value).map(Number),
+        methods: csv(row.querySelector('[name=entry-methods]').value).map(method => method.toUpperCase()),
+        path_prefix: row.querySelector('[name=entry-path]').value.trim()
+      }))
+    };
+    grant.disabled = true; status.textContent = '';
+    try {
+      const result = await api(`/api/sessions/${encodeURIComponent(sid)}/scope`, post(payload));
+      status.textContent = `Saved scope v${result.version}; disarmed.`;
+      scopeSignature = ''; await refresh();
+    } catch (error) { status.textContent = error.message; grant.disabled = false; }
+  };
+  body.append(form);
+  // Restore typed values after a rebuild, matched by field order.
+  const restorable = [...body.querySelectorAll('[data-field]')];
+  restorable.forEach((node,index) => { if (typed[index]) node.value = typed[index][1]; });
+}
+
+function csv(value) { return String(value || '').split(',').map(part => part.trim()).filter(Boolean); }
+function textField(parent,label,name,value) {
+  const wrap = document.createElement('label');
+  const input = Object.assign(document.createElement('input'), {name,value,autocomplete:'off'});
+  input.dataset.field = name;
+  wrap.append(document.createTextNode(label), input);
+  parent.append(wrap); return wrap;
+}
+function numberField(parent,label,name,value) {
+  const wrap = document.createElement('label');
+  const input = Object.assign(document.createElement('input'), {name,type:'number',value:String(value)});
+  input.dataset.field = name; input.min = '0';
+  wrap.append(document.createTextNode(label),input);
+  parent.append(wrap); return wrap;
+}
+function field(parent,label,name,placeholder,value) {
+  const wrap = document.createElement('label');
+  const textarea = Object.assign(document.createElement('textarea'), {name,value,placeholder,rows:2});
+  textarea.dataset.field = name;
+  wrap.append(document.createTextNode(label),textarea);
+  parent.append(wrap); return wrap;
+}
+
+// renderDecisions shows the two things a session can put to a human: the plan
+// awaiting a decision and the questions the herd has voted on. The plan body is
+// prose on purpose; this panel renders it as written and never parses it into
+// authority. Docs: docs/superpowers/specs/2026-11-03-plan-artifact.md
+async function renderDecisions(sid) {
+  const sequence = ++decisionsSequence;
+  const [planResult, proposalResult] = await Promise.all([
+    api(`/api/sessions/${encodeURIComponent(sid)}/plan`),
+    api(`/api/sessions/${encodeURIComponent(sid)}/proposals`)
+  ]);
+  if (sid !== current || sequence !== decisionsSequence) return;
+  const signature = JSON.stringify([planResult.plan, planResult.has_plan, proposalResult.proposals]);
+  if (signature === decisionsSignature) return;
+  decisionsSignature = signature;
+
+  const plan = planResult.has_plan ? planResult.plan : null;
+  const proposals = (proposalResult.proposals || []).slice().reverse();
+  const open = proposals.filter(p => p.status === 'open');
+  const panel = $('decisions'), body = $('decisions-body');
+  panel.hidden = !plan && !proposals.length;
+  if (panel.hidden) return;
+
+  const summary = [];
+  if (plan) summary.push(`Plan v${plan.version} · ${plan.status === 'pending' ? 'awaiting your decision' : plan.status}`);
+  summary.push(`${open.length} open ${open.length === 1 ? 'question' : 'questions'}`);
+  $('decisions-summary').textContent = summary.join(' · ');
+  if (plan?.status === 'pending') panel.open = true;
+
+  const focusKey = panel.contains(document.activeElement) ? document.activeElement.dataset.control : null;
+  const note = panel.querySelector('#plan-note')?.value || '';
+  body.replaceChildren();
+  const names = new Map(currentAgents.map(agent => [agent.id, agent.name]));
+
+  if (plan) {
+    const section = element('section','decision plan-decision');
+    section.append(element('h3','',`Plan v${plan.version}`), element('span',`decision-status ${plan.status}`,plan.status));
+    section.append(element('pre','plan-body',plan.body));
+    if (plan.note) section.append(element('p','decision-note',`Note: ${plan.note}`));
+    if (plan.status === 'pending') {
+      const form = element('form','plan-actions');
+      const label = element('label','', 'Note to the herd (required to reject)');
+      const textarea = element('textarea');
+      textarea.name = 'note'; textarea.maxLength = 2048; textarea.rows = 2; textarea.value = note;
+      textarea.dataset.control = 'plan-note';
+      textarea.placeholder = 'Why, or what would make this approvable…';
+      label.append(textarea);
+      const approve = element('button','primary','Approve plan');
+      const reject = element('button','danger','Reject');
+      approve.type = 'button'; reject.type = 'button';
+      approve.dataset.control = 'plan-approve'; reject.dataset.control = 'plan-reject';
+      approve.disabled = reject.disabled = planDecisionBusy;
+      const decide = approvePlan => async () => {
+        if (!approvePlan && !textarea.value.trim()) { textarea.focus(); return; }
+        planDecisionBusy = true; approve.disabled = reject.disabled = true;
+        try {
+          await api(`/api/sessions/${encodeURIComponent(sid)}/plan/decide`, post({version:plan.version,approve:approvePlan,note:textarea.value.trim()}));
+          decisionsSignature = ''; await refresh();
+        } catch (error) { report(error); approve.disabled = reject.disabled = false; }
+        finally { planDecisionBusy = false; }
+      };
+      approve.onclick = decide(true); reject.onclick = decide(false);
+      const buttons = element('div','plan-buttons');
+      buttons.append(approve,reject);
+      form.append(label,buttons);
+      section.append(form);
+    }
+    body.append(section);
+  }
+
+  if (proposals.length) {
+    const section = element('section','decision proposal-list');
+    section.append(element('h3','', 'Questions put to the herd'));
+    for (const proposal of proposals) {
+      const item = element('article','proposal');
+      const heading = element('div','proposal-heading');
+      heading.append(element('strong','',`#${proposal.id}`), element('span',`decision-status ${proposal.status}`,proposal.status));
+      if (proposal.kind === 'confidence') heading.append(element('span','message-label','no confidence'));
+      if (proposal.kind === 'election') heading.append(element('span','message-label','election'));
+      item.append(heading, element('p','proposal-body',proposal.body));
+      const yes = (proposal.ballots || []).filter(b => b.choice === 'yes').length;
+      const no = (proposal.ballots || []).filter(b => b.choice === 'no').length;
+      item.append(element('p','proposal-tally',`${yes} yes · ${no} no${proposal.result ? ` · ${proposal.result}` : ''}`));
+      for (const ballot of proposal.ballots || []) {
+        item.append(element('p','proposal-ballot',`${names.get(ballot.agent_id) || ballot.agent_id}: ${ballot.choice}${ballot.text ? ` — ${ballot.text}` : ''}`));
+      }
+      section.append(item);
+    }
+    body.append(section);
+  }
+  if (focusKey) body.querySelector(`[data-control="${focusKey}"]`)?.focus({preventScroll:true});
 }
 
 function renderRoster() {
@@ -395,7 +647,7 @@ async function openSession(id) {
   const navigation = ++navigationSequence;
   await api(`/api/sessions/${encodeURIComponent(id)}`);
   if (navigation !== navigationSequence) return;
-  leaveSession(); current = id; selectedAgent = ''; messageSignature = ''; seenLastMessage = 0;
+  leaveSession(); current = id; selectedAgent = ''; messageSignature = ''; decisionsSignature = ''; seenLastMessage = 0;
   const draft = drafts.get(id);
   $('send').elements.body.value = draft?.body || '';
   $('recipient').replaceChildren(new Option('Everyone',''));
