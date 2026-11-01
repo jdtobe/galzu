@@ -4,7 +4,7 @@
 set -e
 cd "$(dirname "$0")"
 
-for gen in generate6.py generate7.py generate8.py; do
+for gen in generate6.py generate7.py generate8.py mark.py; do
     echo "== $gen"
     python3 "$gen" >/dev/null
 done

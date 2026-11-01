@@ -10,6 +10,8 @@ Two live sets, one archived set:
 | `generate6.py`, `icons.svg`, `icons-compare.svg`, `icons-small.svg`, and the ten icon SVGs | Network icons: mesh, nesting and circular structure with no profile in them. |
 | `generate7.py`, `ternary.svg`, and the nine mark SVGs | Ternary hierarchy: "three groups of three groups of three", arranged three by three. |
 | `generate8.py`, `germ.svg`, `germ-small.svg`, and the ten germ SVGs | The name: a seed that branches, in the tree and gasket idioms. |
+| `mark.py`, `mark/` | Trilobe built as a mark: master, 16-to-24 px cut, two lockups, size proof. |
+| `NAMING.md` | Screening record for the product name — what is dead, what is alive, why. |
 | `archive/` | The rejected face direction — five sets of profile studies, their generators, `geometry.py` and the contact sheets. Kept for provenance, not for use. |
 
 ## Looking at them
