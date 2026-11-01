@@ -104,6 +104,9 @@ CREATE INDEX IF NOT EXISTS agents_session ON agents(session_id);`)
 	if err == nil {
 		err = toolsSchema(db)
 	}
+	if err == nil {
+		err = governanceSchema(db)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err

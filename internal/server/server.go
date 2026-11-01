@@ -54,6 +54,7 @@ func New(s *store.Store, r *herd.Runner) http.Handler {
 	m.HandleFunc("POST /api/sessions/{id}/disarm", v.disarmScope)
 	m.HandleFunc("POST /api/sessions/{id}/approvals", v.approveHost)
 	m.HandleFunc("GET /api/sessions/{id}/audit", v.getAudit)
+	m.HandleFunc("GET /api/sessions/{id}/proposals", v.proposals)
 	files, _ := fs.Sub(web, "web")
 	m.Handle("/", http.FileServer(http.FS(files)))
 	return m

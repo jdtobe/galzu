@@ -183,3 +183,26 @@ func (v *server) getAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	respond(w, 200, map[string]any{"audit": trail})
 }
+
+// proposals lists every question in the session with the ballots behind it.
+func (v *server) proposals(w http.ResponseWriter, r *http.Request) {
+	questions, err := v.s.Proposals(r.Context(), r.PathValue("id"))
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	type entry struct {
+		store.Proposal
+		Ballots []store.Ballot `json:"ballots"`
+	}
+	out := make([]entry, 0, len(questions))
+	for _, question := range questions {
+		ballots, err := v.s.Ballots(r.Context(), question.ID)
+		if err != nil {
+			failure(w, err)
+			return
+		}
+		out = append(out, entry{Proposal: question, Ballots: ballots})
+	}
+	respond(w, 200, map[string]any{"proposals": out})
+}

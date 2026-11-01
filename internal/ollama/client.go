@@ -19,6 +19,8 @@ type Reply struct {
 	Text      string  `json:"text"`
 	Thinking  string  `json:"thinking,omitempty"`
 	Recipient string  `json:"recipient,omitempty"`
+	Proposal  int64   `json:"proposal,omitempty"`
+	Choice    string  `json:"choice,omitempty"`
 	Memory    *string `json:"memory,omitempty"`
 	// Server-side accounting. prompt_eval_count is the whole prompt, not just
 	// cache misses, so the duration is what reveals a cache hit.
@@ -101,8 +103,17 @@ func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []
 	if think {
 		out.Thinking = response.Message.Thinking
 	}
-	if out.Action != "message" && out.Action != "rest" && out.Action != "direct" && out.Action != "help" {
-		return out, invalid("unknown action; use message, direct, help, or rest", response.Message.Content)
+	if out.Action != "message" && out.Action != "rest" && out.Action != "direct" && out.Action != "help" &&
+		out.Action != "propose" && out.Action != "vote" {
+		return out, invalid("unknown action; use message, direct, help, propose, vote, or rest", response.Message.Content)
+	}
+	if out.Action == "vote" {
+		if out.Proposal <= 0 {
+			return out, invalid("votes need the proposal id", response.Message.Content)
+		}
+		if out.Choice == "" {
+			return out, invalid(`votes need a choice of "yes" or "no"`, response.Message.Content)
+		}
 	}
 	if out.Action != "rest" && strings.TrimSpace(out.Text) == "" {
 		return out, invalid("message text is empty", response.Message.Content)

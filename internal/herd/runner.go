@@ -461,15 +461,24 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		}
 		entries := afterCut(all, cut)
 		render := func() prompt {
+			proposals, _ := r.store.OpenProposals(x.ctx, s.ID)
+			ballots := make(map[int64][]store.Ballot, len(proposals))
+			for _, proposal := range proposals {
+				if cast, err := r.store.Ballots(x.ctx, proposal.ID); err == nil {
+					ballots[proposal.ID] = cast
+				}
+			}
 			return renderPrompt(promptInput{
-				Session:  s,
-				Agent:    a,
-				Agents:   agents,
-				Activity: r.Activity(s.ID),
-				Memory:   memory,
-				Entries:  entries,
-				Cut:      cut,
-				Recovery: recovery,
+				Session:   s,
+				Agent:     a,
+				Agents:    agents,
+				Activity:  r.Activity(s.ID),
+				Memory:    memory,
+				Entries:   entries,
+				Cut:       cut,
+				Recovery:  recovery,
+				Proposals: proposals,
+				Ballots:   ballots,
 			})
 		}
 		rendered := render()
@@ -678,6 +687,9 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 					r.notifyLocked(s.ID)
 				}
 			}
+		}
+		if err == nil && (reply.Action == "propose" || reply.Action == "vote") {
+			checkpointSaved, err = r.handleGovernance(s, a, agents, reply, last, updatedMemory)
 		}
 		if err == nil && !checkpointSaved {
 			err = r.store.CompleteRestWithMemory(context.Background(), s.ID, a.ID, last, updatedMemory)
