@@ -244,7 +244,7 @@ func turnPacket(in promptInput) string {
 	case in.Plan.Status == "approved":
 		fmt.Fprintf(&b, "\nPlan (approved v%d): %s", in.Plan.Version, in.Plan.Body)
 	default:
-		fmt.Fprintf(&b, "\nPlan: pending review (v%d). Not agreed yet; do not treat it as authoritative.\n%s", in.Plan.Version, in.Plan.Body)
+		fmt.Fprintf(&b, "\nPlan: pending review (v%d). Not agreed yet; do not treat it as authoritative, and do not propose another while this one waits.\n%s", in.Plan.Version, in.Plan.Body)
 	}
 	switch in.Recovery.Category {
 	case "validation":
