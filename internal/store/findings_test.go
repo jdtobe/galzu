@@ -173,3 +173,53 @@ func TestRetractionKeepsTheRecord(t *testing.T) {
 		t.Fatalf("cross-session retraction: %v", err)
 	}
 }
+
+func TestAllFindingsCarriesSessionAndAuthor(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, session := range []Session{
+		{ID: "s1", Name: "First experiment", Goal: "g1", Status: "paused", Concurrency: 1},
+		{ID: "s2", Name: "Second experiment", Goal: "g2", Status: "paused", Concurrency: 1},
+	} {
+		if err := s.CreateSession(ctx, session, []Agent{{ID: session.ID + "-a", SessionID: session.ID, Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := s.CreateFinding(ctx, "s1", "s1-a", "Old claim about caches", "first evidence", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateFinding(ctx, "s2", "s2-a", "New claim about plans", "second evidence", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReviseFinding(ctx, "s1", first.ID, "s1-a", "Old claim, revised", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	all, err := s.AllFindings(ctx, "", 10, 0)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("%+v %v", all, err)
+	}
+	if all[0].Claim != "Old claim, revised" || all[0].SessionName != "First experiment" || all[0].AuthorName != "Ada" {
+		t.Fatalf("newest first with names: %+v", all[0])
+	}
+	if len(all[0].Evidence) != 1 || all[0].Evidence[0].Body != "first evidence" {
+		t.Fatalf("evidence: %+v", all[0])
+	}
+	found, err := s.AllFindings(ctx, "second evidence", 10, 0)
+	if err != nil || len(found) != 1 || found[0].SessionName != "Second experiment" {
+		t.Fatalf("evidence search: %+v %v", found, err)
+	}
+	found, err = s.AllFindings(ctx, "ada", 10, 0)
+	if err != nil || len(found) != 2 {
+		t.Fatalf("author search: %+v %v", found, err)
+	}
+	page, err := s.AllFindings(ctx, "", 1, 1)
+	if err != nil || len(page) != 1 || page[0].Claim != "New claim about plans" {
+		t.Fatalf("paging: %+v %v", page, err)
+	}
+}

@@ -25,10 +25,10 @@ func TestConversationWorkspaceAssets(t *testing.T) {
 		path    string
 		content []string
 	}{
-		{"/", []string{`id="agents"`, `id="agent-detail"`, `id="send"`, `id="storage-recover"`, `id="rename-session"`, `id="session-query"`, `id="session-status"`, `id="clear-session-filters"`, `name="brief"`, `id="brief"`, `id="decisions"`, `id="scope-settings"`, `id="scope-body"`, `id="findings-settings"`, `id="findings-body"`, `id="export-session"`, `data-filter="direct"`, `src="/ui.js"`, `src="/app.js"`}},
-		{"/style.css", []string{".session-workspace", ".inspector", ".plan-body", ".proposal-list", ".scope-facts", ".scope-entry", ".finding-claim", "@media (max-width: 700px)"}},
+		{"/", []string{`id="agents"`, `id="agent-detail"`, `id="send"`, `id="storage-recover"`, `id="rename-session"`, `id="session-query"`, `id="session-status"`, `id="clear-session-filters"`, `name="brief"`, `id="brief"`, `id="decisions"`, `id="scope-settings"`, `id="scope-body"`, `id="findings-settings"`, `id="findings-body"`, `id="export-session"`, `id="nav-findings"`, `id="findings-library"`, `id="findings-query"`, `data-filter="direct"`, `src="/ui.js"`, `src="/app.js"`}},
+		{"/style.css", []string{".session-workspace", ".inspector", ".plan-body", ".proposal-list", ".scope-facts", ".scope-entry", ".finding-claim", ".finding-card", "@media (max-width: 700px)"}},
 		{"/ui.js", []string{"agentState", "visibleMessage", "deliveryState"}},
-		{"/app.js", []string{"renderAgentDetail", "renderMessages", "renderDecisions", "renderScope", "renderFindings", "Mark implemented", "refreshLibrary"}},
+		{"/app.js", []string{"renderAgentDetail", "renderMessages", "renderDecisions", "renderScope", "renderFindings", "refreshFindings", "Mark implemented", "refreshLibrary"}},
 		{"/galzu-mark.svg", []string{"<svg", "trilobe mark"}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {

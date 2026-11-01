@@ -339,3 +339,61 @@ func normaliseStance(stance string) string {
 	}
 	return "support"
 }
+
+// SharedFinding is a finding outside its session, for the cross-session
+// knowledge view. Session and author names are copied so the caller need not
+// resolve them.
+type SharedFinding struct {
+	Finding
+	SessionName string `json:"session_name"`
+	SessionGoal string `json:"session_goal"`
+	AuthorName  string `json:"author_name"`
+}
+
+// AllFindings lists findings across sessions, newest update first. Search matches
+// the claim, its evidence, the session name, or the author name.
+func (s *Store) AllFindings(ctx context.Context, search string, limit, offset int) ([]SharedFinding, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT f.id,f.session_id,f.author_id,f.claim,f.status,f.created_at,f.updated_at,
+COALESCE(n.name,''),s.goal,COALESCE(a.name,'')
+FROM findings f
+JOIN sessions s ON s.id=f.session_id
+LEFT JOIN session_names n ON n.session_id=s.id
+LEFT JOIN agents a ON a.id=f.author_id
+WHERE (@q='' OR
+  instr(lower(f.claim),lower(@q))>0 OR
+  instr(lower(COALESCE(n.name,'')),lower(@q))>0 OR
+  instr(lower(COALESCE(a.name,'')),lower(@q))>0 OR
+  EXISTS (SELECT 1 FROM finding_evidence e WHERE e.finding_id=f.id AND instr(lower(e.body),lower(@q))>0))
+ORDER BY f.updated_at DESC,f.id DESC LIMIT @limit OFFSET @offset`,
+		sql.Named("q", search), sql.Named("limit", limit), sql.Named("offset", offset))
+	if err != nil {
+		return nil, err
+	}
+	out := []SharedFinding{}
+	for rows.Next() {
+		var f SharedFinding
+		var created, updated string
+		if err := rows.Scan(&f.ID, &f.SessionID, &f.AuthorID, &f.Claim, &f.Status, &created, &updated,
+			&f.SessionName, &f.SessionGoal, &f.AuthorName); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		f.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
+		f.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated)
+		out = append(out, f)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	// Load children only after the row set is closed: the store uses one
+	// connection, so a nested query while rows are open would block.
+	for i := range out {
+		if out[i].Evidence, err = s.findingEvidence(ctx, out[i].ID); err != nil {
+			return nil, err
+		}
+		if out[i].Positions, err = s.findingPositions(ctx, out[i].ID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}

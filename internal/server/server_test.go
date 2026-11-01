@@ -404,3 +404,55 @@ func TestFindingsEndpointListsClaims(t *testing.T) {
 		t.Fatalf("findings = %+v", result.Findings)
 	}
 }
+
+func TestCrossSessionFindingsEndpoint(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+	for _, id := range []string{"s1", "s2"} {
+		if err := s.CreateSession(ctx, store.Session{ID: id, Name: "Run " + id, Goal: "g", Status: "paused", Concurrency: 1},
+			[]store.Agent{{ID: id + "-a", SessionID: id, Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.CreateFinding(ctx, id, id+"-a", "Claim in "+id, "evidence in "+id, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/findings?q=s2", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("%d: %s", w.Code, w.Body.String())
+	}
+	var result struct {
+		Findings []store.SharedFinding `json:"findings"`
+		More     bool                  `json:"more"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Findings) != 1 || result.Findings[0].SessionName != "Run s2" || result.Findings[0].AuthorName != "Ada" {
+		t.Fatalf("%+v", result.Findings)
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/findings?limit=0", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("invalid limit accepted: %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/findings?limit=1", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("%d", w.Code)
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Findings) != 1 || !result.More {
+		t.Fatalf("paging: %+v more %v", result.Findings, result.More)
+	}
+}

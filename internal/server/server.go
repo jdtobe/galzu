@@ -57,6 +57,7 @@ func New(s *store.Store, r *herd.Runner) http.Handler {
 	m.HandleFunc("GET /api/sessions/{id}/audit", v.getAudit)
 	m.HandleFunc("GET /api/sessions/{id}/proposals", v.proposals)
 	m.HandleFunc("GET /api/sessions/{id}/findings", v.findings)
+	m.HandleFunc("GET /api/findings", v.listFindings)
 	m.HandleFunc("GET /api/sessions/{id}/plan", v.currentPlan)
 	m.HandleFunc("POST /api/sessions/{id}/plan/decide", v.decidePlan)
 	m.HandleFunc("POST /api/sessions/{id}/plan/done", v.completePlan)

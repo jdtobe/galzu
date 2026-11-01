@@ -5,7 +5,7 @@ let decisionsSignature = '', decisionsSequence = 0, planDecisionBusy = false;
 let scopeSignature = '', scopeSequence = 0;
 let findingsSignature = '', findingsSequence = 0;
 let seenLastMessage = 0;
-let librarySearchTimer;
+let librarySearchTimer, findingsSearchTimer, findingsPage = 0;
 let armedDeletion = '';
 const $ = id => document.getElementById(id);
 const drafts = new Map(), pendingControls = new Set();
@@ -53,15 +53,59 @@ function leaveSession() {
   if (current) drafts.set(current, {body:$('send').elements.body.value, recipient:$('recipient').value});
   if (stream) stream.close();
   stream = null; current = ''; snapshot = null; ++refreshSequence;
-  $('session').hidden = true;
+  $('session').hidden = true; $('findings-library').hidden = true;
   $('session').classList.remove('inspector-open');
   clearError();
 }
 async function showLibrary() {
-  clearTimeout(librarySearchTimer);
-  leaveSession(); $('setup').hidden = true; library.hidden = false;
+  clearTimeout(librarySearchTimer); clearTimeout(findingsSearchTimer);
+  leaveSession(); $('setup').hidden = true; $('findings-library').hidden = true; library.hidden = false;
   document.title = 'Galzu · Sessions';
+  setNav('sessions');
   await refreshLibrary();
+}
+
+function setNav(section) {
+  for (const [id,name] of [['nav-sessions','sessions'],['nav-findings','findings']]) {
+    if (name === section) $(id).setAttribute('aria-current','page');
+    else $(id).removeAttribute('aria-current');
+  }
+}
+
+async function showFindings() {
+  clearTimeout(librarySearchTimer); clearTimeout(findingsSearchTimer);
+  leaveSession(); $('setup').hidden = true; library.hidden = true; $('findings-library').hidden = false;
+  document.title = 'Galzu · Findings';
+  setNav('findings');
+  findingsPage = 0;
+  await refreshFindings();
+}
+
+async function refreshFindings() {
+  const query = $('findings-query').value.trim();
+  const result = await api(`/api/findings?limit=20&offset=${findingsPage*20}&q=${encodeURIComponent(query)}`);
+  const list = $('findings-list');
+  list.replaceChildren();
+  if (!result.findings.length) {
+    list.append(element('p','empty-state', query ? 'No findings match this search.' : 'No findings yet. Start a session and let the herd publish a claim.'));
+  }
+  for (const finding of result.findings) {
+    const card = element('article','finding-card');
+    const top = element('div','finding-card-top');
+    const session = finding.session_name || finding.session_goal.slice(0,80);
+    top.append(element('span','eyebrow',session), element('span',`decision-status ${finding.status}`,finding.status));
+    const claim = element('h2','',finding.claim);
+    const meta = element('p','finding-card-meta',`${finding.author_name || finding.author_id} · ${(finding.evidence || []).length} evidence · ${(finding.positions || []).filter(p=>p.choice==='agree').length} agree · ${(finding.positions || []).filter(p=>p.choice==='disagree').length} disagree`);
+    const open = element('button','','Open session');
+    open.type = 'button';
+    open.onclick = () => openSession(finding.session_id).catch(report);
+    card.append(top,claim,meta,open);
+    list.append(card);
+  }
+  $('findings-results').textContent = `${result.findings.length} ${result.findings.length === 1 ? 'finding' : 'findings'} on this page`;
+  $('findings-page').textContent = `Page ${findingsPage + 1}`;
+  $('findings-previous').disabled = findingsPage === 0;
+  $('findings-next').disabled = !result.more;
 }
 async function refreshLibrary() {
   disarmDeletion();
@@ -734,6 +778,13 @@ async function openSession(id) {
 }
 
 $('nav-sessions').onclick = () => showLibrary().catch(report);
+$('nav-findings').onclick = () => showFindings().catch(report);
+$('findings-refresh').onclick = () => { findingsPage = 0; refreshFindings().catch(report); };
+$('findings-search').onsubmit = event => { event.preventDefault(); findingsPage = 0; refreshFindings().catch(report); };
+$('findings-query').oninput = () => { clearTimeout(findingsSearchTimer); findingsSearchTimer = setTimeout(() => { findingsPage = 0; refreshFindings().catch(report); }, 250); };
+$('clear-findings-search').onclick = () => { $('findings-query').value = ''; findingsPage = 0; refreshFindings().catch(report); };
+$('findings-previous').onclick = () => { findingsPage = Math.max(0, findingsPage-1); refreshFindings().catch(report); };
+$('findings-next').onclick = () => { ++findingsPage; refreshFindings().catch(report); };
 $('brand').onclick = event => { event.preventDefault(); showLibrary().catch(report); };
 $('cancel-setup').onclick = () => showLibrary().catch(report);
 $('sessions-previous').onclick = () => { libraryPage = Math.max(0,libraryPage-1); refreshLibrary().catch(report); };
