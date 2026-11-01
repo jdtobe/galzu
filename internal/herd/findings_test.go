@@ -223,3 +223,38 @@ func TestReviewRequestWakesAPeerAndPositionAnswersIt(t *testing.T) {
 		t.Fatalf("no review message: %+v", messages)
 	}
 }
+
+func TestRecallAnswersWithPrivateHostMessage(t *testing.T) {
+	ctx := context.Background()
+	s, session, agents := findingHerd(t)
+	r := New(s, restsAtOnce{})
+	defer r.Stop()
+
+	if _, err := r.handleFinding(session, agents[0], ollama.Reply{Action: "finding", Text: "The cache survives a rename.", Evidence: "Names only reach the turn packet."}, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := r.handleRecall(session, agents[1], ollama.Reply{Action: "recall", Text: "cache"}, 0, nil)
+	if err != nil || saved {
+		t.Fatalf("saved %v err %v", saved, err)
+	}
+	messages, err := s.Messages(ctx, "s", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := messages[len(messages)-1]
+	if last.Kind != "recall" || last.AgentID != "" || last.RecipientID != agents[1].ID {
+		t.Fatalf("recall message = %+v", last)
+	}
+	for _, want := range []string{"Recall for \"cache\"", "The cache survives a rename.", "Agreement is not verification."} {
+		if !strings.Contains(last.Body, want) {
+			t.Fatalf("missing %q in %q", want, last.Body)
+		}
+	}
+	if _, err := r.handleRecall(session, agents[1], ollama.Reply{Action: "recall", Text: "nothing-matches"}, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	messages, _ = s.Messages(ctx, "s", 0)
+	if !strings.Contains(messages[len(messages)-1].Body, "No open finding matches") {
+		t.Fatalf("empty recall = %q", messages[len(messages)-1].Body)
+	}
+}

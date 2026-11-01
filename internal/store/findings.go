@@ -502,3 +502,38 @@ ORDER BY f.updated_at DESC,f.id DESC LIMIT @limit OFFSET @offset`,
 	}
 	return out, nil
 }
+
+// SearchFindings finds open findings in one session whose claim or evidence
+// contains the query. It is the agent-facing counterpart to the library search:
+// a bounded answer to "what do we already know about this?".
+func (s *Store) SearchFindings(ctx context.Context, sessionID, query string, limit int) ([]Finding, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT f.id FROM findings f
+WHERE f.session_id=? AND f.status<>'withdrawn' AND (
+  instr(lower(f.claim),lower(?))>0 OR
+  EXISTS (SELECT 1 FROM finding_evidence e WHERE e.finding_id=f.id AND instr(lower(e.body),lower(?))>0))
+ORDER BY f.updated_at DESC,f.id DESC LIMIT ?`, sessionID, query, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	out := make([]Finding, 0, len(ids))
+	for _, id := range ids {
+		finding, err := s.finding(ctx, sessionID, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, finding)
+	}
+	return out, nil
+}

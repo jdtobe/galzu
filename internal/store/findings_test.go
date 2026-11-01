@@ -267,3 +267,45 @@ func TestFindingReviewIsRequestedAnsweredAndNotSelf(t *testing.T) {
 		t.Fatalf("cross-session review: %v", err)
 	}
 }
+
+func TestSearchFindingsMatchesClaimAndEvidenceAndSkipsWithdrawn(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, Session{ID: "s", Goal: "g", Status: "running", Concurrency: 1}, nil); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := s.CreateFinding(ctx, "s", "a", "The cache survives a rename.", "Evidence about prefix bytes.", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := s.CreateFinding(ctx, "s", "a", "Plans need a passed proposal.", "The last run showed the gap.", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	withdrawn, err := s.CreateFinding(ctx, "s", "a", "Cache evidence is conclusive.", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RetractFinding(ctx, "s", withdrawn.ID); err != nil {
+		t.Fatal(err)
+	}
+	found, err := s.SearchFindings(ctx, "s", "cache", 5)
+	if err != nil || len(found) != 1 || found[0].ID != cache.ID {
+		t.Fatalf("claim search: %+v %v", found, err)
+	}
+	found, err = s.SearchFindings(ctx, "s", "prefix", 5)
+	if err != nil || len(found) != 1 || found[0].ID != cache.ID {
+		t.Fatalf("evidence search: %+v %v", found, err)
+	}
+	found, err = s.SearchFindings(ctx, "s", "proposal", 5)
+	if err != nil || len(found) != 1 || found[0].ID != plan.ID {
+		t.Fatalf("plan search: %+v %v", found, err)
+	}
+	if found, err = s.SearchFindings(ctx, "s", "cache", 0); err != nil || len(found) != 0 {
+		t.Fatalf("limit zero: %+v %v", found, err)
+	}
+}

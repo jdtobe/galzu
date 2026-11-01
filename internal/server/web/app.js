@@ -721,11 +721,13 @@ function renderMessages(force = false) {
   for (const message of visible) {
     const date = new Date(message.created_at), day = date.toLocaleDateString();
     if (day !== previousDay) { container.append(element('p','day-divider',day)); previousDay = day; }
-    const human = !message.agent_id, sender = human ? 'You' : names.get(message.agent_id) || 'Unknown agent';
+    const harness = !message.agent_id && message.kind === 'recall';
+    const human = !message.agent_id && !harness;
+    const sender = harness ? 'Harness' : human ? 'You' : names.get(message.agent_id) || 'Unknown agent';
     const item = element('article',`chat-message${message.recipient_id ? ' private' : ''}`);
     const content = element('div','message-content'), header = element('div','message-header');
     header.append(element('strong','',message.recipient_id ? `${sender} → ${names.get(message.recipient_id) || message.recipient_id}` : sender));
-    if (message.recipient_id) header.append(element('span','message-label','Private · operator visible'));
+    if (message.recipient_id) header.append(element('span','message-label', harness ? 'Recall · private' : 'Private · operator visible'));
     else if (human) header.append(element('span','message-label','Everyone'));
     if (message.kind === 'help') header.append(element('span','message-label','Help request'));
     const timestamp = element('time','',timeLabel(message.created_at)); timestamp.dateTime = message.created_at; timestamp.title = timeLabel(message.created_at,true); header.append(timestamp);

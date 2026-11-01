@@ -190,3 +190,47 @@ func (r *Runner) handleEndorse(s store.Session, a store.Agent, reply ollama.Repl
 	r.notifyLocked(s.ID)
 	return true, nil
 }
+
+// handleRecall answers an agent's question with the session's matching findings
+// as a private host message. It is retrieval, not authority: results are claims
+// with their evidence and positions, not verified facts.
+func (r *Runner) handleRecall(s store.Session, a store.Agent, reply ollama.Reply, last int64, memory *string) (bool, error) {
+	query := strings.TrimSpace(reply.Text)
+	if query == "" || len(query) > 512 {
+		return false, &ollama.ValidationError{Reason: "recall needs a query of at most 512 bytes"}
+	}
+	findings, err := r.store.SearchFindings(context.Background(), s.ID, query, 5)
+	if err != nil {
+		return false, err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Recall for %q.", query)
+	if len(findings) == 0 {
+		b.WriteString(" No open finding matches. Publish one if you have evidence.")
+	} else {
+		b.WriteString(" Agreement is not verification.")
+		for _, finding := range findings {
+			agree, disagree := 0, 0
+			for _, position := range finding.Positions {
+				switch position.Choice {
+				case "agree":
+					agree++
+				case "disagree":
+					disagree++
+				}
+			}
+			fmt.Fprintf(&b, "\n#%d (%d agree, %d disagree): %s", finding.ID, agree, disagree, finding.Claim)
+			for i, evidence := range finding.Evidence {
+				if i >= 2 {
+					break
+				}
+				fmt.Fprintf(&b, "\n  %s: %s", evidence.Stance, evidence.Body)
+			}
+		}
+	}
+	if _, err := r.store.AppendSocialMessage(context.Background(), s.ID, "", a.ID, "recall", b.String(), ""); err != nil {
+		return false, err
+	}
+	r.notifyLocked(s.ID)
+	return false, nil
+}
