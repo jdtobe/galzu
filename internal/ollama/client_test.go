@@ -89,3 +89,29 @@ func TestContextLimitResponse(t *testing.T) {
 		t.Fatalf("expected context limit, got %v", err)
 	}
 }
+
+func TestFindingEvidenceOnlyRevisionIsAllowed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"message":{"content":"{\"action\":\"finding\",\"finding\":3,\"evidence\":\"a counterexample\",\"stance\":\"oppose\"}"}}`))
+	}))
+	defer srv.Close()
+	reply, err := New(srv.URL, srv.Client()).Chat(context.Background(), "m", nil)
+	if err != nil || reply.Finding != 3 || reply.Evidence != "a counterexample" {
+		t.Fatalf("%+v %v", reply, err)
+	}
+}
+
+func TestEndorsementNeedsAFindingAndAChoice(t *testing.T) {
+	for _, content := range []string{
+		`{"action":"endorse","choice":"agree","text":"yes"}`,
+		`{"action":"endorse","finding":2,"choice":"maybe","text":"hmm"}`,
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"message":{"content":` + "`" + content + "`" + `}}`))
+		}))
+		if _, err := New(srv.URL, srv.Client()).Chat(context.Background(), "m", nil); err == nil {
+			t.Fatalf("accepted %s", content)
+		}
+		srv.Close()
+	}
+}

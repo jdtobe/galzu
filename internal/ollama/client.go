@@ -131,7 +131,10 @@ func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []
 			return out, invalid(`votes need a choice of "yes" or "no"`, response.Message.Content)
 		}
 	}
-	if out.Action != "rest" && strings.TrimSpace(out.Text) == "" {
+	// A revision may carry evidence without repeating the claim; every other
+	// action needs text.
+	evidenceOnly := out.Action == "finding" && out.Finding > 0 && strings.TrimSpace(out.Evidence) != ""
+	if out.Action != "rest" && !evidenceOnly && strings.TrimSpace(out.Text) == "" {
 		return out, invalid("message text is empty", response.Message.Content)
 	}
 	if out.Action != "rest" && len(out.Text) > 4096 {

@@ -42,6 +42,9 @@ func (r *Runner) handleFinding(s store.Session, a store.Agent, reply ollama.Repl
 		}
 		heading = fmt.Sprintf("Finding #%d: %s", finding.ID, claim)
 	} else {
+		if claim == "" && evidence == "" {
+			return false, &ollama.ValidationError{Reason: "a revision needs a claim or evidence"}
+		}
 		finding, err = r.store.ReviseFinding(ctx, s.ID, reply.Finding, a.ID, claim, evidence, stance)
 		switch {
 		case errors.Is(err, store.ErrFindingGone):
