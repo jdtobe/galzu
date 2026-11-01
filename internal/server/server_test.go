@@ -456,3 +456,30 @@ func TestCrossSessionFindingsEndpoint(t *testing.T) {
 		t.Fatalf("paging: %+v more %v", result.Findings, result.More)
 	}
 }
+
+func TestIdleIntervalValidation(t *testing.T) {
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	r := herd.New(s, fake{})
+	defer r.Stop()
+	h := New(s, r)
+	for _, tc := range []struct {
+		idle   string
+		status int
+	}{
+		{`0`, http.StatusCreated},
+		{`60000`, http.StatusCreated},
+		{`1000`, http.StatusBadRequest},
+		{`7200000`, http.StatusBadRequest},
+	} {
+		body := `{"goal":"test","concurrency":1,"idle_interval_ms":` + tc.idle + `,"agents":[{"name":"Ada","role":"leader","model":"m"}]}`
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("POST", "/api/sessions", bytes.NewBufferString(body)))
+		if w.Code != tc.status {
+			t.Fatalf("idle %s: %d %s", tc.idle, w.Code, w.Body.String())
+		}
+	}
+}

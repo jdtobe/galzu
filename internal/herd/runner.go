@@ -71,6 +71,8 @@ type run struct {
 	retries      map[string]chan struct{}
 	sem          chan struct{}
 	solo         bool
+	idle         map[string]bool
+	idleCursor   int
 	storageError string
 }
 
@@ -117,7 +119,7 @@ func (r *Runner) start(ctx context.Context, id string, resume bool) error {
 		s.Status = "running"
 	}
 	c, cancel := context.WithCancel(context.Background())
-	x := &run{ctx: c, cancel: cancel, paused: s.Status != "running", wakes: map[string]chan struct{}{}, retries: map[string]chan struct{}{}, sem: make(chan struct{}, s.Concurrency), solo: len(agents) == 1}
+	x := &run{ctx: c, cancel: cancel, paused: s.Status != "running", wakes: map[string]chan struct{}{}, retries: map[string]chan struct{}{}, sem: make(chan struct{}, s.Concurrency), solo: len(agents) == 1, idle: map[string]bool{}}
 	if x.paused {
 		x.resume = make(chan struct{})
 	}
@@ -145,8 +147,63 @@ func (r *Runner) start(ctx context.Context, id string, resume bool) error {
 		go r.worker(x, s, a, checkpoints[a.ID], ch, x.solo)
 		ch <- struct{}{}
 	}
+	if s.IdleIntervalMS > 0 {
+		go r.idleLoop(x, s, agents)
+	}
 	r.changed(id)
 	return nil
+}
+
+// idleLoop gives one idle agent a turn when the whole herd has been quiet. It is
+// off unless the session asked for it: a herd that keeps talking without a goal
+// is a cost, not a feature. A rest response leaves the herd quiet until the next
+// tick; a message wakes peers through the normal path.
+func (r *Runner) idleLoop(x *run, s store.Session, agents []store.Agent) {
+	ticker := time.NewTicker(time.Duration(s.IdleIntervalMS) * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-x.ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		if !r.wait(x) {
+			return
+		}
+		r.mu.Lock()
+		if x.ctx.Err() != nil {
+			r.mu.Unlock()
+			return
+		}
+		busy := false
+		ready := make([]store.Agent, 0, len(agents))
+		for _, a := range agents {
+			if a.Status != "ready" {
+				continue
+			}
+			switch r.activity[s.ID][a.ID].State {
+			case "inference", "queued", "retrying":
+				busy = true
+			default:
+				ready = append(ready, a)
+			}
+		}
+		if busy || len(ready) == 0 {
+			r.mu.Unlock()
+			continue
+		}
+		a := ready[x.idleCursor%len(ready)]
+		x.idleCursor++
+		x.idle[a.ID] = true
+		ch := x.wakes[a.ID]
+		r.mu.Unlock()
+		if ch != nil {
+			select {
+			case ch <- struct{}{}:
+			default:
+			}
+		}
+	}
 }
 
 func (r *Runner) StorageError(id string) string {
@@ -383,6 +440,10 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			return
 		case <-wake:
 		}
+		r.mu.Lock()
+		idleWake := x.idle[a.ID]
+		delete(x.idle, a.ID)
+		r.mu.Unlock()
 		if !r.wait(x) {
 			return
 		}
@@ -432,7 +493,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			}
 			last = m.ID
 		}
-		if !trigger {
+		if !trigger && !idleWake {
 			selfContinue := false
 			if solo && selfTurns < soloTurnLimit {
 				r.mu.Lock()
@@ -450,8 +511,10 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 				continue
 			}
 			selfTurns++
-		} else {
+		}
+		if trigger {
 			selfTurns = 0
+			idleWake = false
 		}
 		all, err := r.store.Messages(x.ctx, s.ID, 0)
 		if err != nil {
@@ -509,6 +572,7 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 				Plan:      current,
 				Findings:  findings,
 				Reviews:   reviews,
+				Idle:      idleWake,
 			})
 		}
 		rendered := render()

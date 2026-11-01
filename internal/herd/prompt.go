@@ -42,6 +42,7 @@ type promptInput struct {
 	Plan      *store.Plan
 	Findings  []store.Finding
 	Reviews   []store.FindingReview
+	Idle      bool
 }
 
 // prompt separates the append-only prefix from the rebuilt turn packet.
@@ -210,7 +211,11 @@ func hasElection(proposals []store.Proposal) bool {
 // turnPacket carries everything that changes between turns.
 func turnPacket(in promptInput) string {
 	var b strings.Builder
-	b.WriteString("TURN\nYour working memory (yours; may be stale): ")
+	b.WriteString("TURN\n")
+	if in.Idle {
+		b.WriteString("You have been idle. Reflect, start a conversation, or rest. Do not repeat settled work.\n")
+	}
+	b.WriteString("Your working memory (yours; may be stale): ")
 	if in.Memory == "" {
 		b.WriteString("empty")
 	} else {

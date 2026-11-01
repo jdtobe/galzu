@@ -160,6 +160,7 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 		RateIntervalMS     int    `json:"rate_interval_ms"`
 		InferenceTimeoutMS int    `json:"inference_timeout_ms"`
 		RetryDelaysMS      []int  `json:"retry_delays_ms"`
+		IdleIntervalMS     int    `json:"idle_interval_ms"`
 		Agents             []struct {
 			Name  string `json:"name"`
 			Role  string `json:"role"`
@@ -192,6 +193,10 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.InferenceTimeoutMS < 1000 || input.InferenceTimeoutMS > 3600000 || len(input.RetryDelaysMS) > 10 {
 		http.Error(w, "invalid inference recovery policy", 400)
+		return
+	}
+	if input.IdleIntervalMS != 0 && (input.IdleIntervalMS < 30000 || input.IdleIntervalMS > 3600000) {
+		http.Error(w, "idle_interval_ms must be 0 or between 30000 and 3600000", 400)
 		return
 	}
 	for _, delay := range input.RetryDelaysMS {
@@ -229,7 +234,7 @@ func (v *server) create(w http.ResponseWriter, r *http.Request) {
 		failure(w, e)
 		return
 	}
-	s := store.Session{ID: sid, Name: input.Name, Goal: input.Goal, Brief: input.Brief, Concurrency: input.Concurrency, Status: "running", TargetIP: input.TargetIP, RateIntervalMS: input.RateIntervalMS, InferenceTimeoutMS: input.InferenceTimeoutMS, RetryDelaysMS: input.RetryDelaysMS}
+	s := store.Session{ID: sid, Name: input.Name, Goal: input.Goal, Brief: input.Brief, Concurrency: input.Concurrency, Status: "running", TargetIP: input.TargetIP, RateIntervalMS: input.RateIntervalMS, InferenceTimeoutMS: input.InferenceTimeoutMS, RetryDelaysMS: input.RetryDelaysMS, IdleIntervalMS: input.IdleIntervalMS}
 	agents := make([]store.Agent, 0, len(input.Agents))
 	for _, a := range input.Agents {
 		aid, e := id()

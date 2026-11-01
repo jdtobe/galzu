@@ -232,3 +232,19 @@ func TestSessionBriefRoundTripsAndSurvivesReopen(t *testing.T) {
 		t.Fatalf("after reopen brief = %q, err %v", saved.Brief, err)
 	}
 }
+
+func TestSessionIdleIntervalRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, Session{ID: "s", Goal: "g", Status: "paused", Concurrency: 1, IdleIntervalMS: 60000}, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, _, err := s.GetSession(ctx, "s")
+	if err != nil || saved.IdleIntervalMS != 60000 {
+		t.Fatalf("idle = %d err %v", saved.IdleIntervalMS, err)
+	}
+}

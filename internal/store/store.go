@@ -25,6 +25,10 @@ type Session struct {
 	RateIntervalMS     int    `json:"rate_interval_ms,omitempty"`
 	InferenceTimeoutMS int    `json:"inference_timeout_ms,omitempty"`
 	RetryDelaysMS      []int  `json:"retry_delays_ms,omitempty"`
+	// IdleIntervalMS gives an idle agent a chance to reflect or start a
+	// conversation. Zero disables it; nothing happens without the operator
+	// asking for it.
+	IdleIntervalMS int `json:"idle_interval_ms,omitempty"`
 }
 type Agent struct {
 	ID        string `json:"id"`
@@ -73,6 +77,11 @@ func Open(path string) (*Store, error) {
 		// framework, so this is the smallest possible one, and it is safe to
 		// repeat: the column already existing is the success case.
 		if _, alterErr := db.Exec(`ALTER TABLE sessions ADD COLUMN brief TEXT NOT NULL DEFAULT ''`); alterErr != nil && !strings.Contains(alterErr.Error(), "duplicate column") {
+			err = alterErr
+		}
+	}
+	if err == nil {
+		if _, alterErr := db.Exec(`ALTER TABLE sessions ADD COLUMN idle_interval_ms INTEGER NOT NULL DEFAULT 0`); alterErr != nil && !strings.Contains(alterErr.Error(), "duplicate column") {
 			err = alterErr
 		}
 	}
@@ -293,7 +302,7 @@ func (s *Store) CreateSession(ctx context.Context, v Session, agents []Agent) er
 		return e
 	}
 	defer tx.Rollback()
-	if _, e = tx.ExecContext(ctx, `INSERT INTO sessions(id,goal,status,concurrency,brief) VALUES(?,?,?,?,?)`, v.ID, v.Goal, v.Status, v.Concurrency, v.Brief); e != nil {
+	if _, e = tx.ExecContext(ctx, `INSERT INTO sessions(id,goal,status,concurrency,brief,idle_interval_ms) VALUES(?,?,?,?,?,?)`, v.ID, v.Goal, v.Status, v.Concurrency, v.Brief, v.IdleIntervalMS); e != nil {
 		return e
 	}
 	if _, e = tx.ExecContext(ctx, `INSERT INTO session_names(session_id,name) VALUES(?,?)`, v.ID, v.Name); e != nil {
@@ -432,7 +441,7 @@ func (s *Store) CompleteRestWithMemory(ctx context.Context, sessionID, agentID s
 func (s *Store) GetSession(ctx context.Context, id string) (Session, []Agent, error) {
 	var v Session
 	var delays string
-	e := s.db.QueryRowContext(ctx, `SELECT s.id,COALESCE(n.name,''),s.goal,s.brief,s.status,s.concurrency,COALESCE(p.target_ip,''),COALESCE(p.rate_interval_ms,0),COALESCE(i.timeout_ms,600000),COALESCE(i.retry_delays,'[2000,10000,30000]') FROM sessions s LEFT JOIN session_names n ON n.session_id=s.id LEFT JOIN network_policies p ON p.session_id=s.id LEFT JOIN inference_policies i ON i.session_id=s.id WHERE s.id=?`, id).Scan(&v.ID, &v.Name, &v.Goal, &v.Brief, &v.Status, &v.Concurrency, &v.TargetIP, &v.RateIntervalMS, &v.InferenceTimeoutMS, &delays)
+	e := s.db.QueryRowContext(ctx, `SELECT s.id,COALESCE(n.name,''),s.goal,s.brief,s.status,s.concurrency,COALESCE(p.target_ip,''),COALESCE(p.rate_interval_ms,0),COALESCE(i.timeout_ms,600000),COALESCE(i.retry_delays,'[2000,10000,30000]'),s.idle_interval_ms FROM sessions s LEFT JOIN session_names n ON n.session_id=s.id LEFT JOIN network_policies p ON p.session_id=s.id LEFT JOIN inference_policies i ON i.session_id=s.id WHERE s.id=?`, id).Scan(&v.ID, &v.Name, &v.Goal, &v.Brief, &v.Status, &v.Concurrency, &v.TargetIP, &v.RateIntervalMS, &v.InferenceTimeoutMS, &delays, &v.IdleIntervalMS)
 	if e != nil {
 		return v, nil, e
 	}
