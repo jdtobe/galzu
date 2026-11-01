@@ -331,6 +331,33 @@ def small_sheet(bodies):
             f'<rect width="{w}" height="{h:.0f}" fill="#fff"/>{"".join(parts)}</svg>\n')
 
 
+def compare_sheet(bodies, columns=5):
+    """White-backed sheet for viewing in editors that paint transparency black.
+    The production icons stay transparent; this is only for comparison."""
+    cell, gap, pad, label, head = 240, 20, 26, 30, 34
+    rows = (len(bodies) + columns - 1) // columns
+    w = pad * 2 + columns * cell + (columns - 1) * gap
+    h = pad * 2 + head + rows * (cell + label) + (rows - 1) * gap
+    parts = [
+        f'<text x="{pad}" y="{pad + 14}" font-family="Helvetica,Arial,sans-serif" '
+        f'font-size="12" letter-spacing="1.4" fill="{INK}" opacity="0.55">'
+        f'NETWORK MARK STUDIES · WHITE BACKING FOR COMPARISON ONLY</text>']
+    for i, ((_, name, _), body) in enumerate(zip(ICONS, bodies)):
+        x = pad + (i % columns) * (cell + gap)
+        y = pad + head + (i // columns) * (cell + label + gap)
+        parts.append(
+            f'<g transform="translate({x},{y})">'
+            f'<rect width="{cell}" height="{cell}" fill="#ffffff" stroke="#dcdcdc"/>'
+            f'<g transform="scale({cell / S:.4f})">{body}</g></g>'
+            f'<text x="{x + cell/2:.0f}" y="{y + cell + 19}" text-anchor="middle" '
+            f'font-family="Helvetica,Arial,sans-serif" font-size="13" '
+            f'letter-spacing="0.3" fill="{INK}">{name}</text>')
+    return (f'<?xml version="1.0" encoding="UTF-8"?>\n'
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" '
+            f'width="{w}" height="{h}" color="{INK}">'
+            f'<rect width="{w}" height="{h}" fill="#ffffff"/>{"".join(parts)}</svg>\n')
+
+
 def main():
     bodies = []
     for filename, _, render in ICONS:
@@ -340,7 +367,8 @@ def main():
         print("wrote", filename)
     (OUT / "icons.svg").write_text(sheet(bodies))
     (OUT / "icons-small.svg").write_text(small_sheet(bodies))
-    print("wrote icons.svg and icons-small.svg")
+    (OUT / "icons-compare.svg").write_text(compare_sheet(bodies))
+    print("wrote icons.svg, icons-small.svg and icons-compare.svg")
 
 
 if __name__ == "__main__":
