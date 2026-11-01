@@ -279,7 +279,7 @@ async function renderScope(sid) {
 
   const form = element('form','scope-form');
   form.append(element('h3','', envelope ? 'Grant a new version' : 'Grant a scope'));
-  const damage = field(form,'Damage line','damage_line','damage-line',envelope?.damage_line || 'A statement of what lasting damage an allowed request could cause.');
+  const damage = field(form,'Damage line','damage_line',envelope?.damage_line || '','A statement of what lasting damage an allowed request could cause.');
   damage.querySelector('textarea').maxLength = 1024; damage.querySelector('textarea').required = true;
   const budgets = element('div','scope-budget-row');
   numberField(budgets,'Total','total_budget',envelope?.total_budget ?? 100);
@@ -360,7 +360,7 @@ function numberField(parent,label,name,value) {
   wrap.append(document.createTextNode(label),input);
   parent.append(wrap); return wrap;
 }
-function field(parent,label,name,placeholder,value) {
+function field(parent,label,name,value,placeholder) {
   const wrap = document.createElement('label');
   const textarea = Object.assign(document.createElement('textarea'), {name,value,placeholder,rows:2});
   textarea.dataset.field = name;
