@@ -7,16 +7,21 @@
     C10 41 8 51 4 59
     C13 62 22 59 28 54
     L31 48
-    C36 49 42 47 45 43
-    L47 40 H50 Q53 40 52 37
-    L50 35 L51 33 L56 32
-    Q59 31 56 28 L49 21
-    C49 11 41 4 29 4 Z
-    M30 16
-    L34 19 L34 16 L39 20 L43 18
-    L44 24 L51 29 L46 30 L47 36
-    L44 36 L41 42
-    C37 46 32 45 29 42
+    C36 48.5 41 46.5 43.5 43
+    Q45.5 40.5 45.5 39
+    L47 38.5 Q48 38 47 37
+    L46.2 36.3 Q47.5 35.8 47 34.5
+    L46.7 33 L50 32
+    Q52.8 31.2 50.5 29
+    L47 25 Q46 23 46.5 21
+    C47 11 40 4 29 4 Z
+    M30 17
+    Q32 18 33 20
+    L34 18 Q37 21 42 21
+    L44 24 L46 27 L46 31
+    L43.5 33 L44 36
+    Q45 38 42 41
+    C38 45 33 44.5 29.5 41.5
     L27 37 L29 27 Z
     M27 29
     C22 27 22 35 26 36
@@ -25,8 +30,8 @@
     C17 43 15 50 11 56
     C17 53 20 44 19 35 Z
   "/>
-  <g stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
-    <rect x="33" y="24" width="14" height="10" rx="2.5"/>
-    <path d="M26 25 L33 27"/>
+  <g stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="32.5" y="24" width="13.5" height="10" rx="3"/>
+    <path d="M26 25 L32.5 27"/>
   </g>
 </svg>
