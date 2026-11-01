@@ -766,7 +766,7 @@ async function openSession(id) {
   $('agent-detail').replaceChildren(); $('messages').replaceChildren();
   await refresh();
   if (current !== id) return;
-  library.hidden = true; $('setup').hidden = true; $('session').hidden = false;
+  library.hidden = true; $('setup').hidden = true; $('session').hidden = false; setNav('sessions');
   $('messages').scrollTop = $('messages').scrollHeight;
   if (stream) stream.close();
   stream = new EventSource(`/api/sessions/${encodeURIComponent(id)}/events`);
