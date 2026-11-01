@@ -93,6 +93,40 @@ func TestAgentReplyAndCheckpointAtomic(t *testing.T) {
 	}
 }
 
+func TestMemorySavedAtomicallyWithReply(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.CreateSession(ctx, Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1}, []Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}, {ID: "b", SessionID: "s", Name: "Bea", Role: "helper", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	memory := "private, uncertain claim"
+	if _, err = s.AppendAgentReplyWithMemory(ctx, "s", "a", "missing", "direct", "hi", "", 1, &memory); err == nil {
+		t.Fatal("invalid recipient accepted")
+	}
+	got, fresh, err := s.AgentMemory(ctx, "s", "a")
+	if err != nil || got != "" || fresh {
+		t.Fatalf("rollback: %q %v %v", got, fresh, err)
+	}
+	if _, err = s.AppendAgentReplyWithMemory(ctx, "s", "a", "b", "direct", "hi", "", 1, &memory); err != nil {
+		t.Fatal(err)
+	}
+	got, fresh, err = s.AgentMemory(ctx, "s", "a")
+	if err != nil || got != memory || !fresh {
+		t.Fatalf("saved: %q %v %v", got, fresh, err)
+	}
+	got, fresh, err = s.AgentMemory(ctx, "s", "b")
+	if err != nil || got != "" || fresh {
+		t.Fatalf("other agent: %q %v %v", got, fresh, err)
+	}
+	if _, _, err = s.AgentMemory(ctx, "other", "a"); err == nil {
+		t.Fatal("cross-session lookup accepted")
+	}
+}
+
 func TestInterruptedAttemptIsRecordedWithoutFailure(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(filepath.Join(t.TempDir(), "db"))

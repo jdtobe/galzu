@@ -15,10 +15,11 @@ type Message struct {
 	Content string `json:"content"`
 }
 type Reply struct {
-	Action    string `json:"action"`
-	Text      string `json:"text"`
-	Thinking  string `json:"thinking,omitempty"`
-	Recipient string `json:"recipient,omitempty"`
+	Action    string  `json:"action"`
+	Text      string  `json:"text"`
+	Thinking  string  `json:"thinking,omitempty"`
+	Recipient string  `json:"recipient,omitempty"`
+	Memory    *string `json:"memory,omitempty"`
 }
 
 // ValidationError describes a rejected model action. Excerpt is untrusted and

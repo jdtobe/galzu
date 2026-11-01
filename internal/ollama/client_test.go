@@ -57,6 +57,17 @@ func TestChat(t *testing.T) {
 	}
 }
 
+func TestWorkingMemoryReply(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"message":{"content":"{\"action\":\"rest\",\"text\":\"\",\"memory\":\"uncertain claim\"}"}}`))
+	}))
+	defer srv.Close()
+	reply, err := New(srv.URL, srv.Client()).Chat(context.Background(), "m", nil)
+	if err != nil || reply.Memory == nil || *reply.Memory != "uncertain claim" {
+		t.Fatalf("%+v %v", reply, err)
+	}
+}
+
 func TestInvalidResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"message":{"content":"{\"action\":\"message\",\"text\":\"\"}"}}`))

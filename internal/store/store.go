@@ -49,6 +49,8 @@ type Event struct {
 }
 type Store struct{ db *sql.DB }
 
+const MaxAgentMemoryBytes = 2048
+
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -86,6 +88,9 @@ func Open(path string) (*Store, error) {
 	}
 	if err == nil {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_inflight(agent_id TEXT PRIMARY KEY REFERENCES agents(id), started_at TEXT NOT NULL)`)
+	}
+	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_memory(agent_id TEXT PRIMARY KEY REFERENCES agents(id), content TEXT NOT NULL, fresh INTEGER NOT NULL)`)
 	}
 	if err != nil {
 		db.Close()
@@ -333,7 +338,27 @@ func (s *Store) SetCheckpoint(ctx context.Context, sessionID, agentID string, la
 	_, err := s.db.ExecContext(ctx, `UPDATE agent_checkpoints SET message_id=MAX(message_id,?) WHERE agent_id=? AND EXISTS (SELECT 1 FROM agents WHERE id=? AND session_id=?)`, last, agentID, agentID, sessionID)
 	return err
 }
+func (s *Store) AgentMemory(ctx context.Context, sessionID, agentID string) (string, bool, error) {
+	var memory string
+	var fresh bool
+	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(m.content,''),COALESCE(m.fresh,0) FROM agents a LEFT JOIN agent_memory m ON m.agent_id=a.id WHERE a.session_id=? AND a.id=?`, sessionID, agentID).Scan(&memory, &fresh)
+	return memory, fresh, err
+}
+func saveMemory(ctx context.Context, tx *sql.Tx, agentID string, memory *string) error {
+	if memory == nil {
+		_, err := tx.ExecContext(ctx, `UPDATE agent_memory SET fresh=0 WHERE agent_id=?`, agentID)
+		return err
+	}
+	if len(*memory) > MaxAgentMemoryBytes {
+		return errors.New("agent memory exceeds size limit")
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO agent_memory(agent_id,content,fresh) VALUES(?,?,1) ON CONFLICT(agent_id) DO UPDATE SET content=excluded.content,fresh=1`, agentID, *memory)
+	return err
+}
 func (s *Store) CompleteRest(ctx context.Context, sessionID, agentID string, last int64) error {
+	return s.CompleteRestWithMemory(ctx, sessionID, agentID, last, nil)
+}
+func (s *Store) CompleteRestWithMemory(ctx context.Context, sessionID, agentID string, last int64, memory *string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -349,6 +374,9 @@ func (s *Store) CompleteRest(ctx context.Context, sessionID, agentID string, las
 	}
 	if n != 1 {
 		return sql.ErrNoRows
+	}
+	if err = saveMemory(ctx, tx, agentID, memory); err != nil {
+		return err
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM agent_recovery WHERE agent_id=?`, agentID); err != nil {
 		return err
@@ -454,15 +482,19 @@ func (s *Store) AppendMessageWithThinking(ctx context.Context, sid, aid, body, t
 	return s.AppendSocialMessage(ctx, sid, aid, "", "", body, thinking)
 }
 func (s *Store) AppendSocialMessage(ctx context.Context, sid, aid, recipient, kind, body, thinking string) (Message, error) {
-	return s.appendSocialMessage(ctx, sid, aid, recipient, kind, body, thinking, nil)
+	return s.appendSocialMessage(ctx, sid, aid, recipient, kind, body, thinking, nil, nil)
 }
 
 // AppendAgentReply commits the reply and its input checkpoint atomically.
 func (s *Store) AppendAgentReply(ctx context.Context, sid, aid, recipient, kind, body, thinking string, checkpoint int64) (Message, error) {
-	return s.appendSocialMessage(ctx, sid, aid, recipient, kind, body, thinking, &checkpoint)
+	return s.appendSocialMessage(ctx, sid, aid, recipient, kind, body, thinking, &checkpoint, nil)
 }
 
-func (s *Store) appendSocialMessage(ctx context.Context, sid, aid, recipient, kind, body, thinking string, checkpoint *int64) (Message, error) {
+func (s *Store) AppendAgentReplyWithMemory(ctx context.Context, sid, aid, recipient, kind, body, thinking string, checkpoint int64, memory *string) (Message, error) {
+	return s.appendSocialMessage(ctx, sid, aid, recipient, kind, body, thinking, &checkpoint, memory)
+}
+
+func (s *Store) appendSocialMessage(ctx context.Context, sid, aid, recipient, kind, body, thinking string, checkpoint *int64, memory *string) (Message, error) {
 	if kind != "" && kind != "direct" && kind != "help" {
 		return Message{}, errors.New("invalid message kind")
 	}
@@ -514,6 +546,9 @@ func (s *Store) appendSocialMessage(ctx context.Context, sid, aid, recipient, ki
 		}
 		if count != 1 {
 			return m, sql.ErrNoRows
+		}
+		if err = saveMemory(ctx, tx, aid, memory); err != nil {
+			return m, err
 		}
 		if _, err = tx.ExecContext(ctx, `DELETE FROM agent_recovery WHERE agent_id=?`, aid); err != nil {
 			return m, err

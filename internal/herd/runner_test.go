@@ -13,6 +13,104 @@ import (
 
 type capturePrompts struct{ prompts chan []ollama.Message }
 
+type memoryInference struct {
+	prompts chan []ollama.Message
+	replies chan ollama.Reply
+}
+
+func (f memoryInference) Chat(ctx context.Context, _ string, p []ollama.Message) (ollama.Reply, error) {
+	f.prompts <- p
+	select {
+	case reply := <-f.replies:
+		return reply, nil
+	case <-ctx.Done():
+		return ollama.Reply{}, ctx.Err()
+	}
+}
+
+func TestWorkingMemoryCompactsAndFallsBack(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1}, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 10; i++ {
+		if _, err = s.AppendMessage(ctx, "s", "", fmt.Sprintf("old-%02d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := memoryInference{make(chan []ollama.Message, 4), make(chan ollama.Reply, 4)}
+	r := New(s, f)
+	defer r.Stop()
+	if err = r.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-f.prompts:
+	case <-time.After(time.Second):
+		t.Fatal("no initial turn")
+	}
+	memory := "Unverified claim from Ada; still needs evidence."
+	f.replies <- ollama.Reply{Action: "rest", Memory: &memory}
+	waitMemory := func(wantFresh bool) {
+		t.Helper()
+		deadline := time.Now().Add(time.Second)
+		for {
+			got, fresh, err := s.AgentMemory(ctx, "s", "a")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == memory && fresh == wantFresh {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("memory %q fresh %v", got, fresh)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	waitMemory(true)
+	if _, err = s.AppendMessage(ctx, "s", "", "new-one"); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	select {
+	case p := <-f.prompts:
+		text := ""
+		for _, m := range p {
+			text += m.Content + "\n"
+		}
+		if !strings.Contains(text, memory) || !strings.Contains(text, "new-one") || strings.Contains(text, "old-01") {
+			t.Fatalf("not compacted: %s", text)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no second turn")
+	}
+	f.replies <- ollama.Reply{Action: "rest"}
+	waitMemory(false)
+	if _, err = s.AppendMessage(ctx, "s", "", "new-two"); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	select {
+	case p := <-f.prompts:
+		text := ""
+		for _, m := range p {
+			text += m.Content + "\n"
+		}
+		if !strings.Contains(text, "old-01") || !strings.Contains(text, "new-two") || !strings.Contains(text, memory) {
+			t.Fatalf("fallback missing history or memory: %s", text)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no fallback turn")
+	}
+	f.replies <- ollama.Reply{Action: "rest"}
+}
+
 type timeoutInference struct{ called chan struct{} }
 
 func (f timeoutInference) Chat(ctx context.Context, _ string, _ []ollama.Message) (ollama.Reply, error) {
