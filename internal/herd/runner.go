@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/jdtobe/galzu/internal/ollama"
 	"github.com/jdtobe/galzu/internal/store"
+	"log"
 	"math/rand"
 	"strings"
 	"sync"
@@ -218,7 +219,8 @@ func (r *Runner) storageFailureLocked(id string, x *run, err error) {
 	if x.ctx.Err() != nil {
 		return
 	}
-	x.storageError = "Storage operation failed; session stopped. Check storage and retry recovery."
+	x.storageError = fmt.Sprintf("Storage operation failed; session stopped: %v. Check storage and retry recovery.", err)
+	log.Printf("session %s storage failure: %v", id, err)
 	if !x.paused {
 		x.paused = true
 		x.resume = make(chan struct{})
@@ -241,11 +243,11 @@ func (r *Runner) RecoverStorage(id string) error {
 	}
 	if err := r.store.ProbeWrite(context.Background()); err != nil {
 		r.mu.Unlock()
-		return fmt.Errorf("storage write check failed")
+		return fmt.Errorf("storage write check failed: %w", err)
 	}
 	if err := r.store.SetSessionStatus(context.Background(), id, "paused"); err != nil {
 		r.mu.Unlock()
-		return fmt.Errorf("storage write check failed")
+		return fmt.Errorf("storage write check failed: %w", err)
 	}
 	x.cancel()
 	delete(r.runs, id)

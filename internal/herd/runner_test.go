@@ -262,8 +262,8 @@ func TestStorageFailureRequiresExplicitRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.StorageFailure("s", fmt.Errorf("disk error"))
-	if r.StorageError("s") == "" {
-		t.Fatal("no storage error")
+	if message := r.StorageError("s"); !strings.Contains(message, "disk error") {
+		t.Fatalf("storage error hides the cause: %q", message)
 	}
 	if err := r.Resume("s"); err == nil {
 		t.Fatal("resumed despite storage error")
