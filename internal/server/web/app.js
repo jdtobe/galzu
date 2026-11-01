@@ -802,6 +802,7 @@ $('brief-files').onchange = async event => {
   const input = event.target, brief = $('create').elements.brief;
   const files = [...input.files]; input.value = '';
   for (const file of files) {
+    if (file.size > 1024 * 1024) { report(new Error(`${file.name} is larger than 1 MiB and was not read.`)); continue; }
     let text;
     try { text = await file.text(); } catch (error) { report(new Error(`Could not read ${file.name}: ${error.message}`)); continue; }
     const block = `\n\n--- ${file.name} ---\n${text}`;
