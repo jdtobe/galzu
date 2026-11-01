@@ -110,6 +110,9 @@ CREATE INDEX IF NOT EXISTS agents_session ON agents(session_id);`)
 	if err == nil {
 		err = plansSchema(db)
 	}
+	if err == nil {
+		err = workSchema(db)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -516,7 +519,7 @@ func (s *Store) AppendAgentReplyWithMemory(ctx context.Context, sid, aid, recipi
 }
 
 func (s *Store) appendSocialMessage(ctx context.Context, sid, aid, recipient, kind, body, thinking string, checkpoint *int64, memory *string) (Message, error) {
-	if kind != "" && kind != "direct" && kind != "help" {
+	if kind != "" && kind != "direct" && kind != "help" && kind != "available" {
 		return Message{}, errors.New("invalid message kind")
 	}
 	if (kind == "direct" && recipient == "") || (kind == "" && recipient != "") {

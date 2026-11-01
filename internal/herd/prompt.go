@@ -154,6 +154,7 @@ Reply with exactly one JSON object and nothing else:
 {"action":"propose","text":"..."} put a yes/no question to the herd
 {"action":"propose","kind":"confidence","text":"..."} move no confidence in the leader
 {"action":"vote","proposal":<id>,"choice":"yes" or "no","text":"..."} vote, with your reason
+{"action":"available","text":"..."} say you have capacity and want work
 {"action":"plan","text":"..."} propose the steps, definition of done, and acceptance criteria
 {"action":"rest","text":""} stay quiet
 Add "memory": a JSON string with your updated private working memory, at most 2048 UTF-8 bytes. Preserve evidence sources, uncertainty, disagreement, and unanswered questions; distinguish claims from observations.

@@ -105,8 +105,8 @@ func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []
 		out.Thinking = response.Message.Thinking
 	}
 	if out.Action != "message" && out.Action != "rest" && out.Action != "direct" && out.Action != "help" &&
-		out.Action != "propose" && out.Action != "vote" && out.Action != "plan" {
-		return out, invalid("unknown action; use message, direct, help, propose, vote, plan, or rest", response.Message.Content)
+		out.Action != "propose" && out.Action != "vote" && out.Action != "plan" && out.Action != "available" {
+		return out, invalid("unknown action; use message, direct, help, available, propose, vote, plan, or rest", response.Message.Content)
 	}
 	if out.Action == "vote" {
 		if out.Proposal <= 0 {

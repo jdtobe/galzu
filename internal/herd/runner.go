@@ -700,6 +700,9 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 		if err == nil && reply.Action == "plan" {
 			checkpointSaved, err = r.handlePlan(s, a, reply, last, updatedMemory)
 		}
+		if err == nil && reply.Action == "available" {
+			checkpointSaved, err = r.handleAvailable(s, a, reply, last, updatedMemory)
+		}
 		if err == nil && !checkpointSaved {
 			err = r.store.CompleteRestWithMemory(context.Background(), s.ID, a.ID, last, updatedMemory)
 		}
@@ -711,6 +714,9 @@ func (r *Runner) worker(x *run, s store.Session, a store.Agent, last int64, wake
 			activity.CompletedAt = time.Now().UTC().Format(time.RFC3339)
 			r.activity[s.ID][a.ID] = activity
 			r.changed(s.ID)
+		}
+		if err == nil {
+			r.settleWork(s, agents)
 		}
 		if err == nil && more {
 			r.notifyLocked(s.ID)

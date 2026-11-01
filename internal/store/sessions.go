@@ -52,6 +52,7 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 		`DELETE FROM tool_envelopes WHERE session_id=?`,
 		`DELETE FROM inference_policies WHERE session_id=?`,
 		`DELETE FROM session_names WHERE session_id=?`,
+		`DELETE FROM work_requests WHERE session_id=?`,
 		`DELETE FROM plans WHERE session_id=?`,
 		`DELETE FROM ballots WHERE proposal_id IN (SELECT id FROM proposals WHERE session_id=?)`,
 		`DELETE FROM proposals WHERE session_id=?`,
