@@ -29,7 +29,7 @@ func TestConversationWorkspaceAssets(t *testing.T) {
 		{"/style.css", []string{".session-workspace", ".inspector", "@media (max-width: 700px)"}},
 		{"/ui.js", []string{"agentState", "visibleMessage", "deliveryState"}},
 		{"/app.js", []string{"renderAgentDetail", "renderMessages", "refreshLibrary"}},
-		{"/garth-mark.svg", []string{"<svg", "Pablo Stanley"}},
+		{"/garth-mark.svg", []string{"<svg", "long-haired profile with glasses", `fill-rule="evenodd"`}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			w := httptest.NewRecorder()
@@ -76,5 +76,42 @@ func TestBrandArtworkIsSelfContained(t *testing.T) {
 				t.Fatalf("external resource: %s", attribute.Value)
 			}
 		}
+	}
+}
+
+func TestBrandMarkUsesOneColorAndTransparentNegativeSpace(t *testing.T) {
+	data, err := web.ReadFile("web/garth-mark.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder := xml.NewDecoder(strings.NewReader(string(data)))
+	hasCutout := false
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		start, ok := token.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		for _, attribute := range start.Attr {
+			switch attribute.Name.Local {
+			case "fill", "stroke":
+				if attribute.Value != "none" && attribute.Value != "currentColor" {
+					t.Fatalf("unexpected extra paint color: %s", attribute.Value)
+				}
+			case "fill-rule":
+				if attribute.Value == "evenodd" {
+					hasCutout = true
+				}
+			}
+		}
+	}
+	if !hasCutout {
+		t.Fatal("expected transparent face cutout")
 	}
 }

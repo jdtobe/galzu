@@ -1,16 +1,11 @@
-Garth provisional avatar
-------------------------
-Avataaars artwork by Pablo Stanley, assembled using DiceBear 9.x.
-Style license: Free for personal and commercial use.
-Original source: https://avataaars.com/
-Style documentation and licensing: https://www.dicebear.com/styles/avataaars/
-
-This is a generic long-haired, glasses-wearing avatar, not official Wayne's World
-artwork or a claim of affiliation. The downloaded SVG retains its source metadata.
-It is served locally; no avatar API is contacted by the application.
-
-Source configuration:
-https://api.dicebear.com/9.x/avataaars/svg?seed=Garth&top=straight01&hairColor=d6b370&accessories=prescription02&accessoriesColor=243630&accessoriesProbability=100&facialHairProbability=0&eyes=default&eyebrows=defaultNatural&mouth=twinkle&clothing=shirtCrewNeck&clothesColor=243630&skinColor=ffdbb4&scale=110
+Garth provisional silhouette
+---------------------------
+Original SVG artwork created for this project. It replaces the previous
+third-party Avataaars avatar; no Avataaars paths or artwork are included.
+Right-facing side profile: one foreground color, transparent negative space,
+long hair and glasses, no background tile.
+The sidebar uses the SVG as a CSS mask so its color follows the theme.
+This is not official Wayne's World artwork or a claim of affiliation.
 
 Sessions icon
 -------------
