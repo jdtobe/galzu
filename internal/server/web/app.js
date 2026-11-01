@@ -466,6 +466,7 @@ async function renderDecisions(sid) {
       section.append(form);
     }
     if (plan.status === 'pending') {
+      if (open.length) section.append(element('p','warning-line',`${open.length} open ${open.length === 1 ? 'question' : 'questions'} remain. Approving a plan does not answer them.`));
       const form = element('form','plan-actions');
       const label = element('label','', 'Note to the herd (required to reject)');
       const textarea = element('textarea');
