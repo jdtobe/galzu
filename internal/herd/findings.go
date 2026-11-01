@@ -88,7 +88,7 @@ func (r *Runner) handleEndorse(s store.Session, a store.Agent, reply ollama.Repl
 		}
 		return false, err
 	}
-	body := fmt.Sprintf("Endorsed finding #%d: %s", reply.Finding, choice)
+	body := fmt.Sprintf("Position on finding #%d: %s", reply.Finding, choice)
 	if text != "" {
 		body += " — " + text
 	}
