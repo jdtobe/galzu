@@ -94,6 +94,9 @@ func Open(path string) (*Store, error) {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_memory(agent_id TEXT PRIMARY KEY REFERENCES agents(id), content TEXT NOT NULL, fresh INTEGER NOT NULL)`)
 	}
 	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS agent_prompt_state(agent_id TEXT PRIMARY KEY REFERENCES agents(id), cut_message_id INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL)`)
+	}
+	if err == nil {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS session_names(session_id TEXT PRIMARY KEY REFERENCES sessions(id), name TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS events_session_activity ON events(session_id,created_at);
 CREATE INDEX IF NOT EXISTS agents_session ON agents(session_id);`)

@@ -28,7 +28,7 @@ func (f memoryInference) Chat(ctx context.Context, _ string, p []ollama.Message)
 	}
 }
 
-func TestWorkingMemoryCompactsAndFallsBack(t *testing.T) {
+func TestWorkingMemoryTravelsInTurnPacketWithoutRewritingHistory(t *testing.T) {
 	ctx := context.Background()
 	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
 	if err != nil {
@@ -49,8 +49,9 @@ func TestWorkingMemoryCompactsAndFallsBack(t *testing.T) {
 	if err = r.Start(ctx, "s"); err != nil {
 		t.Fatal(err)
 	}
+	var initial []ollama.Message
 	select {
-	case <-f.prompts:
+	case initial = <-f.prompts:
 	case <-time.After(time.Second):
 		t.Fatal("no initial turn")
 	}
@@ -78,17 +79,22 @@ func TestWorkingMemoryCompactsAndFallsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.Notify("s")
+	var second []ollama.Message
 	select {
-	case p := <-f.prompts:
-		text := ""
-		for _, m := range p {
-			text += m.Content + "\n"
-		}
-		if !strings.Contains(text, memory) || !strings.Contains(text, "new-one") || strings.Contains(text, "old-01") {
-			t.Fatalf("not compacted: %s", text)
-		}
+	case second = <-f.prompts:
 	case <-time.After(time.Second):
 		t.Fatal("no second turn")
+	}
+	text := promptText(second)
+	if !strings.Contains(text, memory) || !strings.Contains(text, "new-one") {
+		t.Fatalf("memory or new message missing: %s", text)
+	}
+	// History stays in the prompt: memory lives in the turn packet, not in place
+	// of the log, so the previous prefix is still a byte prefix of this one.
+	for i := 0; i < len(initial)-1; i++ {
+		if second[i] != initial[i] {
+			t.Fatalf("prefix changed at message %d", i)
+		}
 	}
 	f.replies <- ollama.Reply{Action: "rest"}
 	waitMemory(false)
@@ -97,16 +103,18 @@ func TestWorkingMemoryCompactsAndFallsBack(t *testing.T) {
 	}
 	r.Notify("s")
 	select {
-	case p := <-f.prompts:
-		text := ""
-		for _, m := range p {
-			text += m.Content + "\n"
-		}
+	case third := <-f.prompts:
+		text := promptText(third)
 		if !strings.Contains(text, "old-01") || !strings.Contains(text, "new-two") || !strings.Contains(text, memory) {
-			t.Fatalf("fallback missing history or memory: %s", text)
+			t.Fatalf("stale memory dropped history or memory: %s", text)
+		}
+		for i := 0; i < len(second)-1; i++ {
+			if third[i] != second[i] {
+				t.Fatalf("prefix changed at message %d after stale memory", i)
+			}
 		}
 	case <-time.After(time.Second):
-		t.Fatal("no fallback turn")
+		t.Fatal("no third turn")
 	}
 	f.replies <- ollama.Reply{Action: "rest"}
 }
@@ -399,8 +407,8 @@ func TestPendingBacklogProcessedInOrder(t *testing.T) {
 	for _, want := range []string{"item-050", "item-100", "item-110"} {
 		select {
 		case p := <-f.prompts:
-			if !strings.Contains(p[len(p)-1].Content, want) {
-				t.Fatalf("want %s, got %s", want, p[len(p)-1].Content)
+			if text := promptText(p); !strings.Contains(text, want) {
+				t.Fatalf("want %s, got %s", want, text)
 			}
 		case <-time.After(time.Second):
 			t.Fatal("backlog stalled")
@@ -593,7 +601,7 @@ func TestResumeProcessesPendingMessagesOnce(t *testing.T) {
 	}
 	select {
 	case prompt := <-f.prompts:
-		if !strings.Contains(prompt[len(prompt)-1].Content, "while offline") {
+		if !strings.Contains(promptText(prompt), "while offline") {
 			t.Fatal(prompt)
 		}
 	case <-time.After(time.Second):
@@ -654,7 +662,7 @@ func TestPrivateMessagesOnlyReachParticipants(t *testing.T) {
 	r.Notify("s")
 	select {
 	case p := <-f.prompts:
-		if !strings.Contains(p[0].Content, "You are Bea") {
+		if !strings.Contains(p[0].Content, "You are agent b.") {
 			t.Fatalf("wrong recipient: %s", p[0].Content)
 		}
 	case <-time.After(time.Second):
@@ -673,8 +681,8 @@ func TestPrivateMessagesOnlyReachParticipants(t *testing.T) {
 				text += m.Content + "\n"
 			}
 			name := ""
-			for _, n := range []string{"Ada", "Bea", "Cy"} {
-				if strings.Contains(p[0].Content, "You are "+n+" ") {
+			for id, n := range map[string]string{"a": "Ada", "b": "Bea", "c": "Cy"} {
+				if strings.Contains(p[0].Content, "You are agent "+id+".") {
 					name = n
 				}
 			}
@@ -822,5 +830,66 @@ func TestPauseHoldsResult(t *testing.T) {
 		default:
 			time.Sleep(time.Millisecond)
 		}
+	}
+}
+
+func TestPromptCompactsAtBudgetAndStaysAppendOnly(t *testing.T) {
+	ctx := context.Background()
+	s, err := store.Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err := s.CreateSession(ctx, store.Session{ID: "s", Goal: "test", Status: "running", Concurrency: 1}, []store.Agent{{ID: "a", SessionID: "s", Name: "Ada", Role: "leader", Model: "m", Status: "ready"}}); err != nil {
+		t.Fatal(err)
+	}
+	body := "deep-history-marker " + strings.Repeat("x", 1024)
+	for i := 1; i <= 60; i++ {
+		if _, err := s.AppendMessage(ctx, "s", "", fmt.Sprintf("%s %03d", body, i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := capturePrompts{make(chan []ollama.Message, 8)}
+	r := New(s, f)
+	defer r.Stop()
+	if err := r.Start(ctx, "s"); err != nil {
+		t.Fatal(err)
+	}
+	var first []ollama.Message
+	select {
+	case first = <-f.prompts:
+	case <-time.After(2 * time.Second):
+		t.Fatal("no initial turn")
+	}
+	cut, err := s.PromptCut(ctx, "a")
+	if err != nil || cut == 0 {
+		t.Fatalf("prompt did not compact: cut=%d err=%v", cut, err)
+	}
+	text := promptText(first)
+	if strings.Contains(text, "deep-history-marker x") && strings.Contains(text, " 001") {
+		t.Fatal("old history was retained past the cut")
+	}
+	if len(text) > promptBudgetBytes+4096 {
+		t.Fatalf("prompt still over budget: %d bytes", len(text))
+	}
+	if !strings.Contains(text, "Messages up to id") {
+		t.Fatalf("compaction header missing: %s", text[:200])
+	}
+	if _, err := s.AppendMessage(ctx, "s", "", "after-compaction"); err != nil {
+		t.Fatal(err)
+	}
+	r.Notify("s")
+	select {
+	case second := <-f.prompts:
+		for i := 0; i < len(first)-1; i++ {
+			if second[i] != first[i] {
+				t.Fatalf("prefix changed after compaction at message %d", i)
+			}
+		}
+		if !strings.Contains(promptText(second), "after-compaction") {
+			t.Fatal("new message missing")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no second turn")
 	}
 }

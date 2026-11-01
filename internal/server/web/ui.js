@@ -20,6 +20,12 @@ const GarthUI = {
   },
   duration(ms) {
     return ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${ms || 0} ms`;
+  },
+  cacheReuse(activity = {}) {
+    if (!activity.prompt_bytes) return 'No prompt yet';
+    if (!activity.reused_bytes) return 'Cold start';
+    const bytes = n => n.toLocaleString();
+    return `${activity.reuse_percent || 0}% · ${bytes(activity.reused_bytes)} of ${bytes(activity.prompt_bytes)} bytes`;
   }
 };
 if (typeof module !== 'undefined') module.exports = GarthUI;

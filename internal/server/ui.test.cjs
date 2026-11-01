@@ -30,3 +30,9 @@ test('duration labels do not conflate bytes, tokens, or elapsed time', () => {
   assert.equal(ui.duration(23),'23 ms');
   assert.equal(ui.duration(undefined),'0 ms');
 });
+test('cache reuse reports bytes reused, not tokens or elapsed time', () => {
+  assert.equal(ui.cacheReuse({}),'No prompt yet');
+  assert.equal(ui.cacheReuse({prompt_bytes:1200}),'Cold start');
+  assert.equal(ui.cacheReuse({prompt_bytes:1200,reused_bytes:0,reuse_percent:0}),'Cold start');
+  assert.equal(ui.cacheReuse({prompt_bytes:1200,reused_bytes:900,reuse_percent:75}),'75% · 900 of 1,200 bytes');
+});

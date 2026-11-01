@@ -299,8 +299,11 @@ function renderAgentDetail() {
     definition(timings,'Harness queue',activity.state === 'queued' ? 'Waiting for a slot' : GarthUI.duration(activity.queue_ms));
     definition(timings,'Inference request',activity.state === 'inference' ? 'In progress · duration available after completion' : GarthUI.duration(activity.inference_ms));
     definition(timings,'Prompt size',`${activity.prompt_bytes.toLocaleString()} bytes`);
+    definition(timings,'Reused prefix',GarthUI.cacheReuse(activity));
+    if (activity.prompt_eval_count) definition(timings,'Prompt tokens',activity.prompt_eval_count.toLocaleString());
+    if (activity.prompt_eval_ms) definition(timings,'Prompt evaluation',GarthUI.duration(activity.prompt_eval_ms));
   } else definition(timings,'Activity','No timing recorded since server start');
-  diagnostic.append(timings,element('p','','Request time includes any Ollama queueing. Prompt size is UTF-8 bytes, not tokens. Timings reset on server restart.'));
+  diagnostic.append(timings,element('p','','Request time includes any Ollama queueing. Prompt size is UTF-8 bytes, not tokens. Reused prefix is the share of this prompt identical to the previous one; Ollama may reuse less when another agent used the same slot. Prompt evaluation is what Ollama spent reading the prompt, so a short time with a large prompt indicates a warm cache. Timings reset on server restart.'));
   diagnosticSection.append(diagnostic);
   if (recovery) {
     const info = element('dl');

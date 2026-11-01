@@ -33,6 +33,9 @@ func TestDeleteSessionIsCompleteAndAtomic(t *testing.T) {
 		if err := s.BeginAttempt(ctx, id, id+"-a"); err != nil {
 			t.Fatal(err)
 		}
+		if err := s.SetPromptCut(ctx, id+"-a", 1); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := s.db.Exec(`CREATE TRIGGER refuse_delete BEFORE DELETE ON sessions WHEN OLD.id='target' BEGIN SELECT RAISE(ABORT,'test refusal'); END`); err != nil {
 		t.Fatal(err)
@@ -56,7 +59,7 @@ func TestDeleteSessionIsCompleteAndAtomic(t *testing.T) {
 		t.Fatalf("session retained: %v", err)
 	}
 	// Every session-owned table should now contain only the other run's data.
-	for _, table := range []string{"sessions", "agents", "messages", "events", "network_policies", "inference_policies", "session_names", "message_routing", "message_thinking", "agent_settings", "agent_checkpoints", "delivery_baselines", "agent_memory", "agent_recovery", "agent_failures", "agent_inflight"} {
+	for _, table := range []string{"sessions", "agents", "messages", "events", "network_policies", "inference_policies", "session_names", "message_routing", "message_thinking", "agent_settings", "agent_checkpoints", "delivery_baselines", "agent_memory", "agent_prompt_state", "agent_recovery", "agent_failures", "agent_inflight"} {
 		var count int
 		if err := s.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil || count == 0 {
 			t.Fatalf("other run lost %s: %d %v", table, count, err)
@@ -66,7 +69,7 @@ func TestDeleteSessionIsCompleteAndAtomic(t *testing.T) {
 	if err := s.DeleteSession(ctx, "keep"); err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range []string{"sessions", "agents", "messages", "events", "network_policies", "inference_policies", "session_names", "message_routing", "message_thinking", "agent_settings", "agent_checkpoints", "delivery_baselines", "agent_memory", "agent_recovery", "agent_failures", "agent_inflight"} {
+	for _, table := range []string{"sessions", "agents", "messages", "events", "network_policies", "inference_policies", "session_names", "message_routing", "message_thinking", "agent_settings", "agent_checkpoints", "delivery_baselines", "agent_memory", "agent_prompt_state", "agent_recovery", "agent_failures", "agent_inflight"} {
 		var count int
 		if err := s.db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil || count != 0 {
 			t.Fatalf("orphaned %s: %d %v", table, count, err)

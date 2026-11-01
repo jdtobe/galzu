@@ -1,6 +1,11 @@
 # Append-only prompt format
 
-Status: proposed. Nothing in this document is implemented yet.
+Status: partly implemented. The L0–L4 layout, canonical ID-based entries, stable
+preamble, final turn packet, and a persisted byte-budget cut live in
+`internal/herd/prompt.go`, `internal/herd/runner.go`, and
+`internal/store/prompt_state.go`. The cut currently omits history without a
+model-generated summary, and the prefix-drift guard and full telemetry are still
+to come.
 
 ## Decision
 
@@ -330,12 +335,38 @@ inference response and record per attempt:
 
 - `fixed_bytes`, `tail_bytes`, `prompt_bytes`;
 - `prefix_hash` and whether it matched the epoch;
-- `reused_tokens ≈ prompt_tokens − prompt_eval_count` (the server only evaluates
-  cache misses), surfaced as a reuse percentage;
+- `reused_bytes` and `reuse_percent` — the byte prefix shared with the agent's
+  previous prompt, which is an upper bound on KV reuse;
 - `cold_reason` — `epoch_start`, `model_reload`, `slot_evicted`, or `prefix_drift`.
 
-Show reuse and the current epoch in the agent inspector. A prefix drift event is a
-regression, not a statistic.
+`prompt_eval_count` is the whole prompt, not the cache misses, so it does not
+measure reuse. `prompt_eval_duration` is the only direct signal: an identical
+prompt evaluates in tens of milliseconds, while a full evaluation costs roughly
+one millisecond per token on the reference machine.
+
+Show reuse, prompt tokens, and prompt-evaluation time in the agent inspector. A
+prefix drift event is a regression, not a statistic.
+
+## Measurements
+
+Probing Ollama 0.40.13 directly (no harness) established the server's behaviour:
+
+| Request | Prompt tokens | Prompt evaluation |
+| --- | ---: | ---: |
+| cold, first request | 6,725 | 14,515 ms |
+| identical repeat | 6,725 | 72 ms |
+| a different 6,839-token prompt | 6,839 | 14,833 ms |
+| the first prompt again, after the second | 6,725 | 69 ms |
+| the first prompt plus 5 trailing tokens | 6,730 | 1,264 ms |
+
+So the server keeps more than one cached prefix, matches on the token prefix, and
+re-evaluates the divergent suffix. Divergence at the end of a prompt is cheap but
+not free, which is exactly the shape the turn packet produces.
+
+An end-to-end run with two agents and growing history confirms this through the
+proxy. The prompt grew 4.7x (1,955 → 9,291 tokens) while prompt evaluation stayed
+between 0.7 s and 1.3 s, and the measured `reused_bytes` rose to 96–98%. A fixed
+prefix has to hold, and it does.
 
 ## Tests
 

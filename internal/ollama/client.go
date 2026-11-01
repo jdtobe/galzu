@@ -20,6 +20,11 @@ type Reply struct {
 	Thinking  string  `json:"thinking,omitempty"`
 	Recipient string  `json:"recipient,omitempty"`
 	Memory    *string `json:"memory,omitempty"`
+	// Server-side accounting. prompt_eval_count is the whole prompt, not just
+	// cache misses, so the duration is what reveals a cache hit.
+	PromptEvalCount    int   `json:"-"`
+	PromptEvalDuration int64 `json:"-"` // nanoseconds
+	EvalCount          int   `json:"-"`
 }
 
 // ValidationError describes a rejected model action. Excerpt is untrusted and
@@ -79,6 +84,9 @@ func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []
 			Content  string `json:"content"`
 			Thinking string `json:"thinking"`
 		} `json:"message"`
+		PromptEvalCount    int   `json:"prompt_eval_count"`
+		PromptEvalDuration int64 `json:"prompt_eval_duration"`
+		EvalCount          int   `json:"eval_count"`
 	}
 	if e = json.NewDecoder(io.LimitReader(res.Body, 1<<20)).Decode(&response); e != nil {
 		return out, e
@@ -86,6 +94,9 @@ func (c *Client) ChatWithThinking(ctx context.Context, model string, messages []
 	if e = json.Unmarshal([]byte(response.Message.Content), &out); e != nil {
 		return out, invalid("response is not valid JSON", response.Message.Content)
 	}
+	out.PromptEvalCount = response.PromptEvalCount
+	out.PromptEvalDuration = response.PromptEvalDuration
+	out.EvalCount = response.EvalCount
 	out.Thinking = ""
 	if think {
 		out.Thinking = response.Message.Thinking

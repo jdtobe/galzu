@@ -39,6 +39,7 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 		`DELETE FROM agent_recovery WHERE agent_id IN (SELECT id FROM agents WHERE session_id=?)`,
 		`DELETE FROM agent_inflight WHERE agent_id IN (SELECT id FROM agents WHERE session_id=?)`,
 		`DELETE FROM agent_memory WHERE agent_id IN (SELECT id FROM agents WHERE session_id=?)`,
+		`DELETE FROM agent_prompt_state WHERE agent_id IN (SELECT id FROM agents WHERE session_id=?)`,
 		`DELETE FROM agent_checkpoints WHERE agent_id IN (SELECT id FROM agents WHERE session_id=?)`,
 		`DELETE FROM agent_settings WHERE agent_id IN (SELECT id FROM agents WHERE session_id=?)`,
 		`DELETE FROM delivery_baselines WHERE agent_id IN (SELECT id FROM agents WHERE session_id=?)`,
